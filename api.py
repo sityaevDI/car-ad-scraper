@@ -2,12 +2,26 @@ from typing import List, Optional, Dict, Any
 
 from bson import ObjectId
 from fastapi import FastAPI, Query, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
 
 from main import update_page_number, scrape_cars
 
 app = FastAPI()
+
+origins = [
+    "http://localhost:63342",  # Добавьте другие разрешенные источники при необходимости
+    "http://0.0.0.0:8000"
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 MONGO_DETAILS = "mongodb://localhost:27017"
 client = AsyncIOMotorClient(MONGO_DETAILS)
@@ -17,7 +31,7 @@ car_collection = database.get_collection("cars")
 
 class Car(BaseModel):
     id: Optional[str]
-    link: str
+    link: Optional[str]
     img_src: Optional[str]
     condition: str
     make: str

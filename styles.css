@@ -1,0 +1,78 @@
+body {
+    font-family: Arial, sans-serif;
+    background-color: #f0f0f0;
+    margin: 0;
+    padding: 0;
+}
+
+.container {
+    width: 80%;
+    margin: auto;
+    overflow: hidden;
+}
+
+h1 {
+    text-align: center;
+    margin: 20px 0;
+}
+
+.filters {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 20px;
+}
+
+.filters label, .filters select, .filters input, .filters button {
+    margin: 0 10px;
+}
+
+#group-by {
+    height: 100px;
+}
+
+#results {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.group {
+    background-color: #fff;
+    border: 1px solid #ccc;
+    margin: 10px;
+    padding: 10px;
+    width: calc(33.333% - 40px);
+    box-sizing: border-box;
+    border-radius: 5px;
+}
+
+.group img {
+    width: 100%;
+    height: auto;
+}
+
+.group h2 {
+    text-align: center;
+}
+
+.car-list {
+    list-style-type: none;
+    padding: 0;
+}
+
+.car-list li {
+    margin: 10px 0;
+}
+
+.car-list li a {
+    text-decoration: none;
+    color: #000;
+}
+
+.car-list li a:hover {
+    text-decoration: underline;
+}
+
+.hidden {
+    display: none;
+}

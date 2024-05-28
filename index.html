@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Car Listings</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Car Listings</h1>
+        <div class="filters">
+            <label for="group-by">Group By:</label>
+            <select id="group-by" multiple>
+                <option value="make">Make</option>
+                <option value="model">Model</option>
+                <option value="year">Year</option>
+            </select>
+            <label for="min-count">Min Count:</label>
+            <input type="number" id="min-count" value="1" min="1">
+            <button id="fetch-data">Fetch Data</button>
+        </div>
+        <div id="results"></div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>

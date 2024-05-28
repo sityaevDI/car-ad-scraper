@@ -180,3 +180,4 @@ if __name__ == "__main__":
     for i in range(1, 8):
         updated_url = update_page_number(search_url, i)
         scrape_cars(updated_url.format(page=i))
+
