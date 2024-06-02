@@ -1,5 +1,5 @@
 safety_features_translation = {
-    "Airbag za vozača": "driver_airbag",
+    "Airbag za vozača": "airbag",
     "Airbag za suvozača": "passenger_airbag",
     "Bočni airbag": "side_airbag",
     "Child lock": "child_lock",
@@ -135,5 +135,33 @@ condition_translation = {
 }
 
 body_type_codes = {
+    277: 'Limuzina',
+    278: 'Karavan',
+    2631: 'Hečbek',
+    2632: 'Džip/SUV',
+    2633: 'Kupe',
+    2634: 'Kabriolet/Roadster',
+    2635: 'Pickup',
+    2636: 'Monovolumen (MiniVan)',
+}
 
+gearbox_codes = {
+    3210: "Manuelni 4 brzine",
+    3211: "Manuelni 5 brzina",
+    3212: "Manuelni 6 brzina",
+    10795: "Automatski / poluautomatski"
+}
+
+wheel_side_codes = {
+    2630: "Levi volan",
+    2289: "Desni volan"
+}
+
+fuel_type_codes = {
+    45: "Benzin",
+    2308: "Hibridni pogon",
+    2309: "Dizel",
+    2310: "Benzin + Gas (TNG)",
+    2312: "Električni pogon",
+    10525: "Benzin + Metan (CNG)"
 }
