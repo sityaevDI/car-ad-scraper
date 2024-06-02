@@ -157,7 +157,7 @@ class ScrapeBody(BaseModel):
 @app.post("/ads", response_model=str)
 async def scrape_ads_from_url(body: ScrapeBody):
     total_cars = 0
-    for i in range(body.start_page, body.max_pages):
+    for i in range(body.start_page, body.max_pages + 1):
         updated_url = update_page_number(body.search_url, i)
         total_cars += scrape_cars(updated_url.format(page=i))
     return f"cars saved: {total_cars}"

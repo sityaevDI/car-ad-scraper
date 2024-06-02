@@ -32,8 +32,19 @@ function displayResults(groups) {
         const groupDiv = document.createElement('div');
         groupDiv.className = 'group';
 
+        // Рассчитываем диапазон лет и цен
+        const years = group.cars.map(car => car.year);
+        const prices = group.cars.map(car => car.price);
+        const minYear = Math.min(...years);
+        const maxYear = Math.max(...years);
+        const minPrice = Math.min(...prices);
+        const maxPrice = Math.max(...prices);
+
+        const yearRange = (group.year !== undefined) ? group.year : `${minYear}-${maxYear}`;
+        const priceRange = (minPrice === maxPrice) ? `EUR ${minPrice}` : `EUR ${minPrice} - EUR ${maxPrice}`;
+
         const groupHeader = document.createElement('h2');
-        groupHeader.innerText = `${group.make} ${group.model} ${group.year} (${group.count})`;
+        groupHeader.innerText = `${group.make} ${group.model} ${yearRange} (${group.count})`;
         groupDiv.appendChild(groupHeader);
 
         const img = document.createElement('img');
@@ -47,18 +58,45 @@ function displayResults(groups) {
         });
         groupDiv.appendChild(toggleButton);
 
-        const carList = document.createElement('ul');
-        carList.className = 'car-list hidden'; // Добавляем скрытый класс по умолчанию
-        group.cars.forEach(car => {
-            const carItem = document.createElement('li');
-            const carLink = document.createElement('a');
-            carLink.href = "https://www.polovniautomobili.com" + car.link;
-            carLink.innerText = `${car.make} ${car.model} - ${car.year} - EUR ${car.price}`;
-            carItem.appendChild(carLink);
-            carList.appendChild(carItem);
+        const sortSelect = document.createElement('select');
+        const sortOptions = [
+            { value: 'year', text: 'Year' },
+            { value: 'price', text: 'Price' }
+        ];
+        sortOptions.forEach(option => {
+            const opt = document.createElement('option');
+            opt.value = option.value;
+            opt.text = option.text;
+            sortSelect.appendChild(opt);
         });
+
+        sortSelect.addEventListener('change', () => {
+            const sortedCars = [...group.cars];
+            const sortBy = sortSelect.value;
+            sortedCars.sort((a, b) => sortBy === 'price' ? a.price - b.price : a.year - b.year);
+            updateCarList(carList, sortedCars);
+        });
+
+        groupDiv.appendChild(sortSelect);
+
+        const carList = document.createElement('ul');
+        carList.className = 'car-list hidden';
+        updateCarList(carList, group.cars);
+
         groupDiv.appendChild(carList);
 
         resultsDiv.appendChild(groupDiv);
+    });
+}
+
+function updateCarList(carList, cars) {
+    carList.innerHTML = '';
+    cars.forEach(car => {
+        const carItem = document.createElement('li');
+        const carLink = document.createElement('a');
+        carLink.href = "https://www.polovniautomobili.com" + car.link;
+        carLink.innerText = `${car.make} ${car.model} - ${car.year} (${car.engine_capacity}) - EUR ${car.price}`;
+        carItem.appendChild(carLink);
+        carList.appendChild(carItem);
     });
 }
