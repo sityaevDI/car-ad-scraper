@@ -1,4 +1,6 @@
+import re
 from typing import List, Optional, Dict, Any
+from urllib.parse import urlparse, parse_qs
 
 from bson import ObjectId
 from fastapi import FastAPI, Query, HTTPException
@@ -7,6 +9,9 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
 
 from main import update_page_number, scrape_cars
+from mongo.specifications import DecimalRangeParameter, SubSetParameter, OneOfParameter, SimpleParameter, MakeParameter
+from scraping.translation import safety_features_translation, additional_options_translation, condition_translation, \
+    body_type_codes, fuel_type_codes, gearbox_codes, wheel_side_codes
 
 app = FastAPI()
 
@@ -41,7 +46,7 @@ class Car(BaseModel):
     body_type: str
     fuel_type: str
     engine_capacity: int
-    engine_power: str
+    engine_power: int
     fixed_price: str
     price: int
     exchange: str
@@ -72,7 +77,11 @@ class Car(BaseModel):
 
 def car_from_mongo(document: Dict[str, Any]) -> Car:
     document["id"] = str(document.pop("_id"))
-    return Car(**document)
+    document['options'] = [option for option in document.get('options', []) if option is not None]
+    try:
+        return Car(**document)
+    except Exception as e:
+        print(e)
 
 
 # Helper function to retrieve cars from the database
@@ -83,7 +92,7 @@ async def retrieve_cars(filters: Dict[str, Any]):
     return cars
 
 
-async def group_cars(group_by: List[str], min_count: int = 1):
+async def group_cars(group_by: List[str], min_count: int = 1, data_filter: dict = None):
     # Validate group_by fields
     valid_fields = {"make", "model", "year"}
     if not all(field in valid_fields for field in group_by):
@@ -91,8 +100,8 @@ async def group_cars(group_by: List[str], min_count: int = 1):
 
     # Build the _id object for grouping
     group_id = {field: f"${field}" for field in group_by}
-
     pipeline = [
+        {"$match": data_filter},
         {
             "$group": {
                 "_id": group_id,
@@ -121,6 +130,18 @@ async def group_cars(group_by: List[str], min_count: int = 1):
     return grouped_data
 
 
+@app.get("/cars/grouped", response_model=List[Dict[str, Any]])
+async def get_grouped_cars(
+        group_by: List[str] = Query(..., description="Fields to group by: make, model, year"),
+        min_count: Optional[int] = Query(1),
+        search_url: Optional[str] = Query(description="Search bar field from polovni automobili")
+):
+    parsed_url = urlparse(search_url)
+    query = _get_mongo_query_from_url(parsed_url)
+    grouped_data = await group_cars(group_by, min_count, data_filter=query)
+    return grouped_data
+
+
 @app.get("/cars", response_model=List[Car])
 async def get_cars(
         make: str | None = Query(None),
@@ -139,19 +160,16 @@ async def get_cars(
     return cars
 
 
-@app.get("/cars/grouped", response_model=List[Dict[str, Any]])
-async def get_grouped_cars(
-        group_by: List[str] = Query(..., description="Fields to group by: make, model, year"),
-        min_count: Optional[int] = Query(1)
-):
-    grouped_data = await group_cars(group_by, min_count)
-    return grouped_data
-
-
 class ScrapeBody(BaseModel):
     search_url: str
     start_page: int = 1
     max_pages: int
+
+
+def _to_snake_case(param: str) -> str:
+    if '_' not in param:
+        return re.sub(r'(?<!^)(?=[A-Z])', '_', param).lower()
+    return param
 
 
 @app.post("/ads", response_model=str)
@@ -159,8 +177,68 @@ async def scrape_ads_from_url(body: ScrapeBody):
     total_cars = 0
     for i in range(body.start_page, body.max_pages + 1):
         updated_url = update_page_number(body.search_url, i)
-        total_cars += scrape_cars(updated_url.format(page=i))
+        total_cars += scrape_cars(updated_url)
     return f"cars saved: {total_cars}"
+
+
+def _get_mongo_query_from_url(parsed_url):
+    query_params = dict((k, v if len(v) > 1 or k.endswith('[]') else v[0])
+                        for k, v in parse_qs(parsed_url.query).items())
+    query_params = {_to_snake_case(param): value for param, value in query_params.items()}
+
+    price = DecimalRangeParameter('price', query_params.get('price_from'), query_params.get('price_to'))
+    year = DecimalRangeParameter('year', query_params.get('year_from'), query_params.get('year_to'))
+
+    power_kw = DecimalRangeParameter('power', query_params.get('power_from'), query_params.get('power_to'))
+
+    engine_capacity = DecimalRangeParameter('engine_capacity', query_params.get('engine_volume_from'),
+                                            query_params.get('engine_volume_to'))
+    mileage = DecimalRangeParameter('mileage', query_params.get('mileage_from'), query_params.get('mileage_to'))
+
+    safety = [param for param in query_params if
+              param in safety_features_translation.values()]
+    safety = SubSetParameter('safety', safety)
+
+    options = [param for param in query_params if
+               param in additional_options_translation.values()]
+    options = SubSetParameter('options', options)
+
+    condition = [param for param in query_params if
+                 param in condition_translation.values()]
+    condition = SubSetParameter('details', condition)
+
+    body_types = [body_type_codes.get(int(chassis)) for chassis in query_params.get('chassis[]', [])]
+    body_types = OneOfParameter("body_type", body_types)
+
+    fuel_type = [fuel_type_codes.get(int(fuel)) for fuel in query_params.get('fuel[]', [])]
+    fuel_type = OneOfParameter("fuel_type", fuel_type)
+
+    gearbox = [gearbox_codes.get(int(gearbox)) for gearbox in query_params.get('gearbox[]', [])]
+    gearbox = OneOfParameter("transmission", gearbox)
+
+    wheel_side = (wheel_side_codes.get(int(query_params.get('wheel_side')[0]))
+                  if query_params.get('wheel_side') else None)
+    wheel_side = SimpleParameter('wheel_side', wheel_side)
+    car_1_make, car_1_model = query_params.get('brand'), query_params.get('model[]')
+    car_2_make, car_2_model = query_params.get('brand2'), query_params.get('model2[]')
+    make = MakeParameter({car_1_make: car_1_model, car_2_make: car_2_model})
+    model_filter = {price, year, power_kw, engine_capacity, mileage, safety, options, condition, body_types, fuel_type,
+                    gearbox, wheel_side, make}
+    query = {}
+    for spec in model_filter:
+        try:
+            spec_query = spec.to_query()
+        except ValueError:
+            continue
+        for key, value in spec_query.items():
+            if key in query:
+                if isinstance(query[key], dict) and isinstance(value, dict):
+                    query[key].update(value)
+                elif isinstance(query[key], list) and isinstance(value, list):
+                    query[key].extend(value)
+            else:
+                query[key] = value
+    return query
 
 
 if __name__ == "__main__":
