@@ -24,6 +24,7 @@ additional_options_translation = {
     "Branici u boji auta": "body_coloured_bumpers",
     "Servo volan": "power_steering",
     "Multi funkcionalni volan": "multi_function_steering_wheel",
+    "Multifunkcionalni volan": "multi_function_steering_wheel",
     "Tempomat": "cruise_control",
     "Daljinsko zaključavanje": "remote_central_locking",
     "Putni računar": "trip_computer",
@@ -116,7 +117,8 @@ additional_options_translation = {
     "Android Auto": "android_auto",
     "Autonomna vožnja": "autonomous_drive",
     "Virtuelna tabla": "virtual_cockpit",
-    "Matrix farovi": "matrix_lights"
+    "Matrix farovi": "matrix_lights",
+    "Električni podizači": "electric_windows",
 }
 
 condition_translation = {
@@ -164,4 +166,27 @@ fuel_type_codes = {
     2310: "Benzin + Gas (TNG)",
     2312: "Električni pogon",
     10525: "Benzin + Metan (CNG)"
+}
+
+door_number_codes = {
+    3012: '2/3 vrata',
+    3013: '4/5 vrata'
+}
+
+driveshaft_codes = {
+    293: 'Prednji',
+    294: 'Zadnji',
+    295: '4x4',
+    296: '4x4 reduktor'
+}
+
+seat_codes = {
+    3193: '2 sedišta',
+    3702: '3 sedišta',
+    3194: '4 sedišta',
+    3195: '5 sedišta',
+    3196: '6 sedišta',
+    3197: '7 sedišta',
+    3198: '8 sedišta',
+    3199: '9 sedišta'
 }

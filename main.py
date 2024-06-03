@@ -19,15 +19,40 @@ def save_car(details):
     cars_collection.replace_one(filter={'link': details['link']}, upsert=True, replacement=details)
 
 
+def scrape_all_pages(car_list_url: str):
+    page, total_cars = 1, 0
+    while True:
+        updated_url = update_page_number(car_list_url, page)
+        response = requests.get(updated_url, headers=default_request_headers)
+        if response.status_code != 200:
+            print(f"Failed to retrieve the page. Status code: {response.status_code}")
+            return
+
+        soup = BeautifulSoup(response.text, 'html.parser')
+        total_cars += scrape_one_search_page(response.text)
+
+        text = soup.find(class_='js-hide-on-filter').find_next('small').text
+        pattern = r'\d+'
+        numbers = re.findall(pattern, text)
+        to_ad = int(numbers[1])
+        total_ads = int(numbers[2])
+        if to_ad == total_ads:
+            break
+        page += 1
+
+
 def scrape_cars(car_list_url: str):
     response = requests.get(car_list_url, headers=default_request_headers)
     if response.status_code != 200:
         print(f"Failed to retrieve the page. Status code: {response.status_code}")
         return
+    return scrape_one_search_page(response.text)
 
-    soup = BeautifulSoup(response.text, 'html.parser')
+
+def scrape_one_search_page(response_text):
+    soup = BeautifulSoup(response_text, 'html.parser')
     ad_pattern = re.compile(r'classified ad-\d+.*')
-    ads = soup.find_all('article', class_=lambda x: x and ad_pattern.search(x))
+    ads = soup.find_all('article', class_=lambda x: x and ad_pattern.search(x) and 'uk-hidden' not in x)
     cars_counter = 0
     for ad in ads:
         link_tag = ad.find('a', class_='firstImage')
@@ -37,7 +62,7 @@ def scrape_cars(car_list_url: str):
         if car_link and not cars_collection.find_one({'link': car_link}):
             parser = CarParser(car_link, img_link)
             save_car(parser.get_car_details())
-            time.sleep(0.3)
+            time.sleep(0.2)
             cars_counter += 1
     return cars_counter
 
@@ -53,15 +78,8 @@ if __name__ == "__main__":
     # Пример использования
 
     search_url = (
-        "https://www.polovniautomobili.com/auto-oglasi/pretraga?brand=&brand2=&price_from=7000&price_to=8000"
-        "&year_from=2010&year_to=&chassis%5B%5D=2631&chassis%5B%5D=278&chassis%5B%5D=2633&chassis%5B%5D=2636&chassis"
-        "%5B%5D=2632&fuel%5B%5D=2309&flywheel=&atest=&door_num=3013&submit_1=&without_price=1&date_limit=&showOldNew"
-        "=all&modeltxt=&engine_volume_from=1550&engine_volume_to=&power_from=74&power_to=&mileage_from=&mileage_to"
-        "=250000&emission_class=&gearbox%5B%5D=10795&seat_num=&wheel_side=2630&air_condition%5B%5D=3159&air_condition"
-        "%5B%5D=3160&registration=&country=RS&country_origin=&city=&damaged%5B%5D=3799&registration_price=&airbag=1"
-        "&passenger_airbag=1&side_airbag=1&child_lock=1&abs=1&esp=1&asr=1&alarm=1&coded_key=1&engine_blocking=1"
-        "&central_locking=1&zeder=1&dead_angle_sensor=1&OBD_protection=1&key_less_entry=1&lane_tracking=1&kneeAirbag"
-        "=1&automaticBraking=1&sun_roof=1&page=8&sort=basic")
-    for i in range(1, 8):
-        updated_url = update_page_number(search_url, i)
-        scrape_cars(updated_url.format(page=i))
+        "https://www.polovniautomobili.com/auto-oglasi/pretraga?brand=&brand2=&price_from=1000&price_to=2000&year_from"
+        "=2005&year_to=&flywheel=&atest=&door_num=&submit_1=&without_price=1&date_limit=&showOldNew=all&modeltxt"
+        "=&engine_volume_from=&engine_volume_to=&power_from=&power_to=&mileage_from=&mileage_to=&emission_class"
+        "=&seat_num=3197&wheel_side=&registration=&country=&country_origin=&city=&registration_price=&page=2&sort=basic")
+    scrape_all_pages(search_url)

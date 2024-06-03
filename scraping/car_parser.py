@@ -27,8 +27,16 @@ class CarParser:
         return soup
 
     def get_car_details(self):
-        soup = self.request_car_html()
-        classified_content = soup.find('div', {'class': 'classified-content', 'id': 'classified-content'})
+
+        soup, classified_content, retries = None, None, 3
+
+        while classified_content is None:
+            soup = self.request_car_html()
+            classified_content = soup.find('div', {'class': 'classified-content', 'id': 'classified-content'})
+            if not classified_content:
+                retries -= 1
+                if retries == 0:
+                    return None
 
         basic_car_info = self._get_basic_car_info(classified_content, soup)
         self.car_info.update(basic_car_info)
@@ -117,12 +125,16 @@ class CarParser:
         capacity = int(capacity if unit == 'cm3' else None)
 
         power = car_info_section.find(string='Snaga motora').find_next('div').text.strip()
-        power = power.split('/')[0]
+        power = int(power.split('/')[0])
 
+        make = ' '.join(str.capitalize(m) for m in
+                        car_info_section.find(string='Marka').find_next('div').text.split('-'))
+        model = ' '.join(str.capitalize(m) for m in
+                         car_info_section.find(string='Model').find_next('div').text.split('-'))
         basic_car_info = {
+            'make': make,
+            'model': model,
             'condition': car_info_section.find(string='Stanje:').find_next('div').text.strip(),
-            'make': car_info_section.find(string='Marka').find_next('div').text.strip(),
-            'model': car_info_section.find(string='Model').find_next('div').text.strip(),
             'year': year,
             'mileage': mileage,
             'body_type': car_info_section.find(string='Karoserija').find_next('div').text.strip(),
