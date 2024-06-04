@@ -13,7 +13,7 @@ class DecimalRangeParameter(Specification):
         self.param_name = param_name
 
     def to_query(self) -> dict[str, Any]:
-        if not self.val_from or self.val_to:
+        if not self.val_from and not self.val_to:
             raise ValueError
         query = {self.param_name: {}}
         if self.val_from is not None:
@@ -65,14 +65,16 @@ class MakeParameter(Specification):
 
     @staticmethod
     def normalize_string(str_value: str):
-        res = ' '.join([str.capitalize(a) for a in str_value.split('-')])
+        res = ' '.join(str.capitalize(a) for a in str_value.split('-'))
         return res
 
     def to_query(self) -> dict[str, Any]:
-        if not self.makes:
+        if not self.makes or not [key for key in self.makes.keys() if key is not None]:
             raise ValueError
         or_clauses = []
         for make, models in self.makes.items():
+            if not make:
+                continue
             make = self.normalize_string(make)
             if models:
                 models = [self.normalize_string(model) for model in models]

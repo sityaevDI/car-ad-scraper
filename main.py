@@ -19,7 +19,7 @@ def save_car(details):
     cars_collection.replace_one(filter={'link': details['link']}, upsert=True, replacement=details)
 
 
-def scrape_all_pages(car_list_url: str):
+async def scrape_all_pages(car_list_url: str):
     page, total_cars = 1, 0
     while True:
         updated_url = update_page_number(car_list_url, page)

@@ -10,15 +10,22 @@
     <div class="container">
         <h1>Car Listings</h1>
         <div class="filters">
-            <label for="group-by">Group By:</label>
-            <select id="group-by" multiple>
-                <option value="make">Make</option>
-                <option value="model">Model</option>
-                <option value="year">Year</option>
-            </select>
-            <label for="min-count">Min Count:</label>
-            <input type="number" id="min-count" value="1" min="1">
-            <button id="fetch-data">Fetch Data</button>
+            <div class="filter-row">
+                <label for="group-by">Group By:</label>
+                <div id="group-by">
+                    <label><input type="checkbox" value="make" checked> Make</label>
+                    <label><input type="checkbox" value="model" checked> Model</label>
+                    <label><input type="checkbox" value="year" checked> Year</label>
+                </div>
+                <label for="min-count">Min Count:</label>
+                <input type="number" id="min-count" value="1" min="1">
+                <button id="fetch-data">Fetch Data</button>
+            </div>
+            <div class="filter-row">
+                <label for="search-url">Search URL:</label>
+                <input type="text" id="search-url" placeholder="Enter search URL">
+                <button id="scrape-data">Scrape by URL</button>
+            </div>
         </div>
         <div id="results"></div>
     </div>

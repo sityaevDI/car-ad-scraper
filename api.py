@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
 
-from main import update_page_number, scrape_cars
+from main import update_page_number, scrape_cars, scrape_all_pages
 from mongo.specifications import DecimalRangeParameter, SubSetParameter, OneOfParameter, SimpleParameter, MakeParameter
 from scraping.translation import safety_features_translation, additional_options_translation, condition_translation, \
     body_type_codes, fuel_type_codes, gearbox_codes, wheel_side_codes
@@ -100,8 +100,10 @@ async def group_cars(group_by: List[str], min_count: int = 1, data_filter: dict 
 
     # Build the _id object for grouping
     group_id = {field: f"${field}" for field in group_by}
-    pipeline = [
-        {"$match": data_filter},
+    pipeline = []
+    if data_filter:
+        pipeline.append({"$match": data_filter})
+    pipeline.extend([
         {
             "$group": {
                 "_id": group_id,
@@ -122,7 +124,7 @@ async def group_cars(group_by: List[str], min_count: int = 1, data_filter: dict 
                 "cars": 1
             }
         }
-    ]
+    ])
     grouped_data = []
     async for group in car_collection.aggregate(pipeline):
         group["cars"] = [car_from_mongo(car) for car in group["cars"]]
@@ -163,7 +165,7 @@ async def get_cars(
 class ScrapeBody(BaseModel):
     search_url: str
     start_page: int = 1
-    max_pages: int
+    max_pages: int = 1
 
 
 def _to_snake_case(param: str) -> str:
@@ -174,6 +176,12 @@ def _to_snake_case(param: str) -> str:
 
 @app.post("/ads", response_model=str)
 async def scrape_ads_from_url(body: ScrapeBody):
+    total_cars = await scrape_all_pages(body.search_url)
+    return f"cars saved: {total_cars}"
+
+
+@app.post("/test_ads", response_model=str)
+async def scrape_ads_from_url(body: ScrapeBody):
     total_cars = 0
     for i in range(body.start_page, body.max_pages + 1):
         updated_url = update_page_number(body.search_url, i)
@@ -182,6 +190,8 @@ async def scrape_ads_from_url(body: ScrapeBody):
 
 
 def _get_mongo_query_from_url(parsed_url):
+    if not parsed_url.query:
+        return None
     query_params = dict((k, v if len(v) > 1 or k.endswith('[]') else v[0])
                         for k, v in parse_qs(parsed_url.query).items())
     query_params = {_to_snake_case(param): value for param, value in query_params.items()}
@@ -222,6 +232,8 @@ def _get_mongo_query_from_url(parsed_url):
     car_1_make, car_1_model = query_params.get('brand'), query_params.get('model[]')
     car_2_make, car_2_model = query_params.get('brand2'), query_params.get('model2[]')
     make = MakeParameter({car_1_make: car_1_model, car_2_make: car_2_model})
+
+    # todo: implement additional parameters for condition, ac type, door count
     model_filter = {price, year, power_kw, engine_capacity, mileage, safety, options, condition, body_types, fuel_type,
                     gearbox, wheel_side, make}
     query = {}

@@ -190,3 +190,12 @@ seat_codes = {
     3198: '8 sedišta',
     3199: '9 sedišta'
 }
+
+ac_type_codes = {
+    3159: 'Manuelna klima',
+    3160: 'Automatska klima',
+}
+
+condition_codes = {
+    3799: "Nije oštećen"
+}

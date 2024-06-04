@@ -1,13 +1,15 @@
 document.getElementById('fetch-data').addEventListener('click', fetchData);
+document.getElementById('scrape-data').addEventListener('click', scrapeAndFetchData);
 
 async function fetchData() {
-    const groupBySelect = document.getElementById('group-by');
-    const selectedOptions = Array.from(groupBySelect.selectedOptions).map(option => option.value);
+    const groupByCheckboxes = document.querySelectorAll('#group-by input[type="checkbox"]');
+    const selectedOptions = Array.from(groupByCheckboxes).filter(checkbox => checkbox.checked).map(checkbox => checkbox.value);
     const groupBy = selectedOptions.join('&group_by=');
     const minCount = document.getElementById('min-count').value;
+    const searchUrl = document.getElementById('search-url').value;
 
     const baseUrl = 'http://0.0.0.0:8000';
-    const url = `${baseUrl}/cars/grouped?min_count=${minCount}&group_by=${groupBy}`;
+    const url = `${baseUrl}/cars/grouped?min_count=${minCount}&group_by=${groupBy}&search_url=${encodeURIComponent(searchUrl)}`;
 
     try {
         const response = await fetch(url);
@@ -19,6 +21,31 @@ async function fetchData() {
     } catch (error) {
         console.error('Failed to fetch data:', error);
     }
+}
+
+async function scrapeAndFetchData() {
+    const searchUrl = document.getElementById('search-url').value;
+    const baseUrl = 'http://0.0.0.0:8000';
+
+    // Step 1: POST to /ads
+    try {
+        const postResponse = await fetch(`${baseUrl}/ads`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ search_url: searchUrl })
+        });
+        if (!postResponse.ok) {
+            throw new Error(`HTTP error! status: ${postResponse.status}`);
+        }
+    } catch (error) {
+        console.error('Failed to scrape data:', error);
+        return;
+    }
+
+    // Step 2: GET to /cars/grouped
+    await fetchData();
 }
 
 function displayResults(groups) {
@@ -41,10 +68,10 @@ function displayResults(groups) {
         const maxPrice = Math.max(...prices);
 
         const yearRange = (group.year !== undefined) ? group.year : `${minYear}-${maxYear}`;
-        const priceRange = (minPrice === maxPrice) ? `EUR ${minPrice}` : `EUR ${minPrice} - EUR ${maxPrice}`;
+        const priceRange = (minPrice === maxPrice) ? `EUR ${minPrice}` : `EUR ${minPrice} - ${maxPrice}`;
 
         const groupHeader = document.createElement('h2');
-        groupHeader.innerText = `${group.make} ${group.model} ${yearRange} (${group.count})`;
+        groupHeader.innerText = `${group.make} ${group.model} ${yearRange} (${group.count}) - ${priceRange}`;
         groupDiv.appendChild(groupHeader);
 
         const img = document.createElement('img');
@@ -95,7 +122,8 @@ function updateCarList(carList, cars) {
         const carItem = document.createElement('li');
         const carLink = document.createElement('a');
         carLink.href = "https://www.polovniautomobili.com" + car.link;
-        carLink.innerText = `${car.make} ${car.model} - ${car.year} (${car.engine_capacity}) - EUR ${car.price}`;
+        carLink.target = "_blank";
+        carLink.innerText = `${car.make} ${car.model} - ${car.year} (${car.engine_capacity}cm3) - EUR ${car.price}`;
         carItem.appendChild(carLink);
         carList.appendChild(carItem);
     });

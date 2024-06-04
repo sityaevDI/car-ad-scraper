@@ -128,9 +128,9 @@ class CarParser:
         power = int(power.split('/')[0])
 
         make = ' '.join(str.capitalize(m) for m in
-                        car_info_section.find(string='Marka').find_next('div').text.split('-'))
+                        re.split('[- ]', car_info_section.find(string='Marka').find_next('div').text))
         model = ' '.join(str.capitalize(m) for m in
-                         car_info_section.find(string='Model').find_next('div').text.split('-'))
+                         re.split('[- ]', car_info_section.find(string='Model').find_next('div').text))
         basic_car_info = {
             'make': make,
             'model': model,
