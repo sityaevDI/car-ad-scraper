@@ -113,7 +113,7 @@ additional_options_translation = {
     "AUX konekcija": "aux",
     "Modovi vožnje": "driving_modes",
     "Postolje za bežično punjenje telefona": "wireless_charging_pad",
-    "Apple CarPlay": "apple_carplay",
+    "Apple CarPlay": "apple_car_play",
     "Android Auto": "android_auto",
     "Autonomna vožnja": "autonomous_drive",
     "Virtuelna tabla": "virtual_cockpit",

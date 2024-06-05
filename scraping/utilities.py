@@ -2,7 +2,8 @@ import re
 from logging import getLogger, DEBUG
 from urllib.parse import urlparse
 
-from bs4 import Tag
+import brotli
+from bs4 import Tag, BeautifulSoup
 
 logger = getLogger("scraper")
 logger.setLevel(DEBUG)
@@ -19,6 +20,18 @@ default_request_headers = {
     'Sec-Fetch-Site': 'same-origin',
     'Sec-Fetch-User': '?1'
 }
+
+
+def get_soup_from_response(response):
+    if response.headers.get('Content-Encoding') == 'br':
+        try:
+            decompressed_data = brotli.decompress(response.content)
+        except brotli.error:
+            decompressed_data = response.content
+        soup = BeautifulSoup(decompressed_data, 'html.parser')
+    else:
+        soup = BeautifulSoup(response.text, 'html.parser')
+    return soup
 
 
 def safe_extract_text(section: Tag, label: str):

@@ -2,11 +2,11 @@ import re
 from datetime import datetime, timezone
 
 import requests
-from bs4 import BeautifulSoup
 
 from scraping.translation import safety_features_translation, additional_options_translation, \
     condition_translation
-from scraping.utilities import safe_extract_section, safe_extract_text, default_request_headers, logger
+from scraping.utilities import safe_extract_section, safe_extract_text, default_request_headers, logger, \
+    get_soup_from_response
 
 
 class CarParser:
@@ -23,7 +23,7 @@ class CarParser:
     def request_car_html(self):
         response = requests.get(self.car_url, headers=default_request_headers)
         logger.info("fetched %s page", self.car_link)
-        soup = BeautifulSoup(response.text, 'html.parser')
+        soup = get_soup_from_response(response)
         return soup
 
     def get_car_details(self):
@@ -68,7 +68,8 @@ class CarParser:
                               condition_info_section.find_all('div', class_='uk-width-medium-1-4')]
         return condition_features
 
-    def _get_options(self, classified_content) -> list[str]:
+    @staticmethod
+    def _get_options(classified_content) -> list[str]:
         equipment_info_section = safe_extract_section(classified_content, 'Oprema')
         if not equipment_info_section:
             return []

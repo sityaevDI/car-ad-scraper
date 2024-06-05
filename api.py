@@ -2,13 +2,13 @@ import re
 from typing import List, Optional, Dict, Any
 from urllib.parse import urlparse, parse_qs
 
-from bson import ObjectId
-from fastapi import FastAPI, Query, HTTPException
+from fastapi import FastAPI, Query, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
-from main import update_page_number, scrape_cars, scrape_all_pages
+from main import scrape_all_pages
+from mongo.car_repo import CarRepository, Car
+from mongo.database import get_database, DataBase
 from mongo.specifications import DecimalRangeParameter, SubSetParameter, OneOfParameter, SimpleParameter, MakeParameter
 from scraping.translation import safety_features_translation, additional_options_translation, condition_translation, \
     body_type_codes, fuel_type_codes, gearbox_codes, wheel_side_codes
@@ -16,7 +16,7 @@ from scraping.translation import safety_features_translation, additional_options
 app = FastAPI()
 
 origins = [
-    "http://localhost:63342",  # Добавьте другие разрешенные источники при необходимости
+    "http://localhost:63342",
     "http://0.0.0.0:8000"
 ]
 
@@ -28,119 +28,36 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-MONGO_DETAILS = "mongodb://localhost:27017"
-client = AsyncIOMotorClient(MONGO_DETAILS)
-database = client.car_database
-car_collection = database.get_collection("cars")
 
-
-class Car(BaseModel):
-    id: Optional[str]
-    link: Optional[str]
-    img_src: Optional[str]
-    condition: str
-    make: str
-    model: str
-    year: int
-    mileage: int
-    body_type: str
-    fuel_type: str
-    engine_capacity: int
-    engine_power: int
-    fixed_price: str
-    price: int
-    exchange: str
-    ad_number: str
-    emission_class: str
-    drive: str
-    transmission: str
-    doors: str
-    seats: str
-    steering_side: str
-    climate_control: str
-    color: str
-    interior_material: str | None
-    interior_color: str | None
-    registered_until: str
-    origin: str
-    damage: str
-    import_country: Optional[str] = None
-    options: Optional[List[str]] = Field(default_factory=list)
-    details: Optional[List[str]] = None
-
-    class Config:
-        arbitrary_types_allowed = True
-        json_encoders = {
-            ObjectId: str,
-        }
-
-
-def car_from_mongo(document: Dict[str, Any]) -> Car:
-    document["id"] = str(document.pop("_id"))
-    document['options'] = [option for option in document.get('options', []) if option is not None]
-    try:
-        return Car(**document)
-    except Exception as e:
-        print(e)
-
-
-# Helper function to retrieve cars from the database
-async def retrieve_cars(filters: Dict[str, Any]):
+async def retrieve_cars(filters: Dict[str, Any], db):
     cars = []
-    async for car in car_collection.find(filters):
-        cars.append(car_from_mongo(car))
+    repo = CarRepository(db)
+    async for car in repo.get_cars(filters):
+        cars.append(repo.car_from_mongo(car))
     return cars
 
 
-async def group_cars(group_by: List[str], min_count: int = 1, data_filter: dict = None):
+async def group_cars(group_by: List[str], db: DataBase, min_count: int = 1, data_filter: dict = None, ):
     # Validate group_by fields
     valid_fields = {"make", "model", "year"}
     if not all(field in valid_fields for field in group_by):
         raise HTTPException(status_code=400, detail=f"Invalid group_by fields. Valid fields are: {valid_fields}")
 
     # Build the _id object for grouping
-    group_id = {field: f"${field}" for field in group_by}
-    pipeline = []
-    if data_filter:
-        pipeline.append({"$match": data_filter})
-    pipeline.extend([
-        {
-            "$group": {
-                "_id": group_id,
-                "count": {"$sum": 1},
-                "cars": {"$push": "$$ROOT"}
-            }
-        },
-        {
-            "$match": {
-                "count": {"$gte": min_count}
-            }
-        },
-        {
-            "$project": {
-                "_id": 0,
-                **{field: f"$_id.{field}" for field in group_by},
-                "count": 1,
-                "cars": 1
-            }
-        }
-    ])
-    grouped_data = []
-    async for group in car_collection.aggregate(pipeline):
-        group["cars"] = [car_from_mongo(car) for car in group["cars"]]
-        grouped_data.append(group)
-    return grouped_data
+    car_repo = CarRepository(db)
+    results = await car_repo.get_grouped_data(group_by, data_filter, min_count)
+    return results
 
 
-@app.get("/cars/grouped", response_model=List[Dict[str, Any]])
+@app.get("/cars/grouped", response_model=List[Dict[str, Any]], )
 async def get_grouped_cars(
         group_by: List[str] = Query(..., description="Fields to group by: make, model, year"),
         min_count: Optional[int] = Query(1),
-        search_url: Optional[str] = Query(description="Search bar field from polovni automobili")
-):
+        search_url: Optional[str] = Query(description="Search bar field from polovni automobili"),
+        db: DataBase = Depends(get_database)):
     parsed_url = urlparse(search_url)
     query = _get_mongo_query_from_url(parsed_url)
-    grouped_data = await group_cars(group_by, min_count, data_filter=query)
+    grouped_data = await group_cars(db=db, group_by=group_by, min_count=min_count, data_filter=query)
     return grouped_data
 
 
@@ -148,7 +65,8 @@ async def get_grouped_cars(
 async def get_cars(
         make: str | None = Query(None),
         model: Optional[str] = Query(None),
-        year: Optional[int] = Query(None)
+        year: Optional[int] = Query(None),
+        db: DataBase = Depends(get_database)
 ):
     filters = {}
     if make:
@@ -158,7 +76,7 @@ async def get_cars(
     if year:
         filters["year"] = year
 
-    cars = await retrieve_cars(filters)
+    cars = await retrieve_cars(filters, db)
     return cars
 
 
@@ -174,18 +92,11 @@ def _to_snake_case(param: str) -> str:
     return param
 
 
-@app.post("/ads", response_model=str)
-async def scrape_ads_from_url(body: ScrapeBody):
-    total_cars = await scrape_all_pages(body.search_url)
-    return f"cars saved: {total_cars}"
-
-
-@app.post("/test_ads", response_model=str)
-async def scrape_ads_from_url(body: ScrapeBody):
-    total_cars = 0
-    for i in range(body.start_page, body.max_pages + 1):
-        updated_url = update_page_number(body.search_url, i)
-        total_cars += scrape_cars(updated_url)
+@app.post("/ads", response_model=str, )
+async def scrape_ads_from_url(
+        body: ScrapeBody,
+        db: DataBase = Depends(get_database)):
+    total_cars = await scrape_all_pages(body.search_url, db)
     return f"cars saved: {total_cars}"
 
 
