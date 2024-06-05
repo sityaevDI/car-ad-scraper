@@ -67,7 +67,14 @@ function displayResults(groups) {
         const minPrice = Math.min(...prices);
         const maxPrice = Math.max(...prices);
 
-        const yearRange = (group.year !== undefined) ? group.year : `${minYear}-${maxYear}`;
+        // yearRange
+        let yearRange;
+        if (group.cars.length === 1 || minYear === maxYear) {
+            yearRange = minYear;
+        } else {
+            yearRange = `${minYear}-${maxYear}`;
+        }
+
         const priceRange = (minPrice === maxPrice) ? `EUR ${minPrice}` : `EUR ${minPrice} - ${maxPrice}`;
 
         const groupHeader = document.createElement('h2');
@@ -80,15 +87,12 @@ function displayResults(groups) {
 
         const toggleButton = document.createElement('button');
         toggleButton.innerText = 'Show/Hide Cars';
-        toggleButton.addEventListener('click', () => {
-            carList.classList.toggle('hidden');
-        });
         groupDiv.appendChild(toggleButton);
 
         const sortSelect = document.createElement('select');
         const sortOptions = [
-            { value: 'year', text: 'Year' },
-            { value: 'price', text: 'Price' }
+            { value: 'price', text: 'Price' },
+            { value: 'year', text: 'Year' }
         ];
         sortOptions.forEach(option => {
             const opt = document.createElement('option');
@@ -97,20 +101,25 @@ function displayResults(groups) {
             sortSelect.appendChild(opt);
         });
 
+        const carList = document.createElement('ul');
+        carList.className = 'car-list hidden';
+        groupDiv.appendChild(carList);
+
+        toggleButton.addEventListener('click', () => {
+            carList.classList.toggle('hidden');
+        });
+
         sortSelect.addEventListener('change', () => {
-            const sortedCars = [...group.cars];
             const sortBy = sortSelect.value;
-            sortedCars.sort((a, b) => sortBy === 'price' ? a.price - b.price : a.year - b.year);
+            const sortedCars = [...group.cars].sort((a, b) => sortBy === 'price' ? a.price - b.price : a.year - b.year);
             updateCarList(carList, sortedCars);
         });
 
+        // Default sorting
+        const sortedCars = [...group.cars].sort((a, b) => a.price - b.price);
+        updateCarList(carList, sortedCars);
+
         groupDiv.appendChild(sortSelect);
-
-        const carList = document.createElement('ul');
-        carList.className = 'car-list hidden';
-        updateCarList(carList, group.cars);
-
-        groupDiv.appendChild(carList);
 
         resultsDiv.appendChild(groupDiv);
     });
