@@ -1,6 +1,6 @@
 import os
 
-from motor.motor_asyncio import AsyncIOMotorClient
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorCollection
 
 MONGODB_URL = os.getenv("MONGODB_URL", "")  # deploying without docker-compose
 
@@ -19,16 +19,19 @@ if not MONGODB_URL:
 
 class DataBase:
     def __init__(self, mongodb_url: str):
-        self.car_collection = None
+        self.car_collection: AsyncIOMotorCollection | None = None
         self.database = None
-        self.client: AsyncIOMotorClient = None
+        self.client: AsyncIOMotorClient | None = None
         self.mongodb_url = mongodb_url
 
     async def connect(self):
         self.client = AsyncIOMotorClient(self.mongodb_url)
         self.database = self.client.car_database
-        self.car_collection = self.database.get_collection("cars")
-        await self.car_collection.create_index('createdAt', expireAfterSeconds=3 * 24 * 60 * 60)
+        self.car_collection: AsyncIOMotorCollection = self.database.get_collection("cars")
+        if self.car_collection is None:
+            await self.database.create_collection("cars", capped=True, size=1000)
+        await self.car_collection.create_index('createdAt', expireAfterSeconds=7 * 24 * 60 * 60)
+        await self.car_collection.create_index([('ad_number', 1)], unique=True)
 
     async def disconnect(self):
         self.client.close()

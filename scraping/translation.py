@@ -199,3 +199,13 @@ ac_type_codes = {
 condition_codes = {
     3799: "Nije oštećen"
 }
+
+emission_class_codes = {
+    4803: "Euro 6"
+}
+
+interior_material_codes = {
+    3831: 'Prirodna koža',
+    3832: 'Kombinovana koža',
+    3833: 'Velur'
+}

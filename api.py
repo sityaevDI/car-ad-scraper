@@ -11,7 +11,8 @@ from mongo.car_repo import CarRepository, Car
 from mongo.database import get_database, DataBase
 from mongo.specifications import DecimalRangeParameter, SubSetParameter, OneOfParameter, SimpleParameter, MakeParameter
 from scraping.translation import safety_features_translation, additional_options_translation, condition_translation, \
-    body_type_codes, fuel_type_codes, gearbox_codes, wheel_side_codes
+    body_type_codes, fuel_type_codes, gearbox_codes, wheel_side_codes, ac_type_codes, condition_codes, \
+    emission_class_codes, interior_material_codes
 
 app = FastAPI()
 
@@ -110,7 +111,7 @@ def _get_mongo_query_from_url(parsed_url):
     price = DecimalRangeParameter('price', query_params.get('price_from'), query_params.get('price_to'))
     year = DecimalRangeParameter('year', query_params.get('year_from'), query_params.get('year_to'))
 
-    power_kw = DecimalRangeParameter('power', query_params.get('power_from'), query_params.get('power_to'))
+    power_kw = DecimalRangeParameter('engine_power', query_params.get('power_from'), query_params.get('power_to'))
 
     engine_capacity = DecimalRangeParameter('engine_capacity', query_params.get('engine_volume_from'),
                                             query_params.get('engine_volume_to'))
@@ -137,16 +138,29 @@ def _get_mongo_query_from_url(parsed_url):
     gearbox = [gearbox_codes.get(int(gearbox)) for gearbox in query_params.get('gearbox[]', [])]
     gearbox = OneOfParameter("transmission", gearbox)
 
-    wheel_side = (wheel_side_codes.get(int(query_params.get('wheel_side')[0]))
+    wheel_side = (wheel_side_codes.get(int(query_params.get('wheel_side')))
                   if query_params.get('wheel_side') else None)
-    wheel_side = SimpleParameter('wheel_side', wheel_side)
+    wheel_side = SimpleParameter('steering_side', wheel_side)
     car_1_make, car_1_model = query_params.get('brand'), query_params.get('model[]')
     car_2_make, car_2_model = query_params.get('brand2'), query_params.get('model2[]')
     make = MakeParameter({car_1_make: car_1_model, car_2_make: car_2_model})
 
-    # todo: implement additional parameters for condition, ac type, door count
+    ac_type = [ac_type_codes.get(int(ac_code)) for ac_code in query_params.get('air_condition[]', [])]
+    ac_type = OneOfParameter('climate_control', ac_type)
+
+    damage = [condition_codes.get(int(condition_code)) for condition_code in query_params.get('damaged[]', [])]
+    damage = OneOfParameter('damage', damage)
+
+    emission_class = (emission_class_codes.get(int(query_params.get('emission_class')))
+                      if query_params.get('emission_class') else None)
+    emission_class = SimpleParameter('emission_class', emission_class)
+
+    interior_material = [interior_material_codes.get(int(int_m_code)) for int_m_code in
+                         query_params.get('interior_material[]', [])]
+    interior_material = OneOfParameter('interior_material', interior_material)
+    # todo: implement additional parameters for door count
     model_filter = {price, year, power_kw, engine_capacity, mileage, safety, options, condition, body_types, fuel_type,
-                    gearbox, wheel_side, make}
+                    gearbox, wheel_side, make, ac_type, damage, emission_class, interior_material}
     query = {}
     for spec in model_filter:
         try:

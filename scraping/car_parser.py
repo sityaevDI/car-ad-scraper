@@ -1,42 +1,35 @@
 import re
 from datetime import datetime, timezone
+from typing import Optional
 
-import requests
+from bs4 import Tag
+from pydantic import BaseModel
 
 from scraping.translation import safety_features_translation, additional_options_translation, \
     condition_translation
-from scraping.utilities import safe_extract_section, safe_extract_text, default_request_headers, logger, \
-    get_soup_from_response
+from scraping.utilities import safe_extract_section, safe_extract_text
+
+
+class CarAdvShortInfo(BaseModel):
+    ad_number: Optional[int] = 0
+    ad_link: str
+    img_link: Optional[str]
 
 
 class CarParser:
 
-    def __init__(self, car_link: str, image_link: str):
+    def __init__(self, car_ad: CarAdvShortInfo, soup: Tag):
         self.car_info = {
-            'link': car_link,
-            'img_src': image_link,
+            'link': car_ad.ad_link,
+            'img_src': car_ad.img_link,
+            'ad_number': car_ad.ad_number
         }
-        self.car_link = car_link
-        self.image_link = image_link
-        self.car_url = 'https://www.polovniautomobili.com' + car_link
-
-    def request_car_html(self):
-        response = requests.get(self.car_url, headers=default_request_headers)
-        logger.info("fetched %s page", self.car_link)
-        soup = get_soup_from_response(response)
-        return soup
+        self.car_ad = car_ad
+        self.soup = soup
 
     def get_car_details(self):
-
-        soup, classified_content, retries = None, None, 3
-
-        while classified_content is None:
-            soup = self.request_car_html()
-            classified_content = soup.find('div', {'class': 'classified-content', 'id': 'classified-content'})
-            if not classified_content:
-                retries -= 1
-                if retries == 0:
-                    return None
+        soup = self.soup
+        classified_content = soup.find('div', {'class': 'classified-content', 'id': 'classified-content'})
 
         basic_car_info = self._get_basic_car_info(classified_content, soup)
         self.car_info.update(basic_car_info)
@@ -145,7 +138,7 @@ class CarParser:
             'fixed_price': car_info_section.find(string='Fiksna cena').find_next('div').text.strip(),
             'price': price,
             'exchange': car_info_section.find(string='Zamena:').find_next('div').text.strip(),
-            'ad_number': car_info_section.find(string='Broj oglasa:').find_next('div').text.strip(),
+            'ad_number': int(car_info_section.find(string='Broj oglasa:').find_next('div').text.strip()),
             'createdAt': datetime.now(timezone.utc)
         }
         return basic_car_info

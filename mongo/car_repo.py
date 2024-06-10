@@ -1,7 +1,7 @@
 from typing import Optional, AsyncGenerator
 
-from pydantic import BaseModel, Field
 from bson import ObjectId
+from pydantic import BaseModel, Field
 
 from mongo.database import DataBase
 
@@ -22,7 +22,7 @@ class Car(BaseModel):
     fixed_price: str
     price: int
     exchange: str
-    ad_number: str
+    ad_number: int | str
     emission_class: str
     drive: str
     transmission: str
@@ -54,7 +54,7 @@ class CarRepository:
 
     async def save_car(self, car_details: dict):
         await self.db.car_collection.replace_one(
-            filter={'link': car_details['link']},
+            filter={'ad_number': car_details['ad_number']},
             replacement=car_details,
             upsert=True
         )

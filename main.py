@@ -4,11 +4,11 @@ import time
 from urllib.parse import urlparse, parse_qs, urlencode
 
 import requests
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 
 from mongo.car_repo import CarRepository
-from mongo.database import DataBase
-from scraping.car_parser import CarParser
+from mongo.database import DataBase, get_database
+from scraping.car_parser import CarParser, CarAdvShortInfo
 from scraping.utilities import default_request_headers, strip_query_parameters, get_soup_from_response
 
 
@@ -23,14 +23,21 @@ async def scrape_all_pages(car_list_url: str, db_connection: DataBase):
         soup = get_soup_from_response(response)
         total_cars += await scrape_one_search_page(response.text, db_connection)
 
-        text = soup.find(class_='js-hide-on-filter').find_next('small').text
-        pattern = r'\d+'
-        numbers = re.findall(pattern, text)
-        to_ad = int(numbers[1])
-        total_ads = int(numbers[2])
+        from_ad, to_ad, total_ads = await _get_ad_counter(soup)
         if to_ad == total_ads:
             break
         page += 1
+    return total_cars
+
+
+async def _get_ad_counter(soup: Tag) -> tuple[int, int, int]:
+    text = soup.find(class_='js-hide-on-filter').find_next('small').text
+    pattern = r'\d+'
+    numbers = re.findall(pattern, text)
+    from_ad = int(numbers[0])
+    to_ad = int(numbers[1])
+    total_ads = int(numbers[2])
+    return from_ad, to_ad, total_ads
 
 
 async def scrape_one_search_page(response_text, db_connection):
@@ -43,9 +50,13 @@ async def scrape_one_search_page(response_text, db_connection):
         link_tag = ad.find('a', class_='firstImage')
         car_link = strip_query_parameters(link_tag['href'])
         img_tag = link_tag.find('img', class_='lazy lead')
-        img_link = img_tag['data-srcset'] if img_tag else None
         if car_link and not await repo.get_car(car_link):
-            parser = CarParser(car_link, img_link)
+            car_url = 'https://www.polovniautomobili.com' + car_link
+            response = requests.get(car_url, headers=default_request_headers)
+            parser = CarParser(CarAdvShortInfo(
+                ad_link=car_link,
+                img_link=img_tag['data-srcset'] if img_tag else None,
+            ), get_soup_from_response(response))
             await repo.save_car(parser.get_car_details())
             time.sleep(0.2)
             cars_counter += 1
@@ -66,7 +77,6 @@ async def main():
                   "=&power_from=&power_to=&mileage_from=&mileage_to=&emission_class=&gearbox%5B%5D=3212&gearbox%5B%5D"
                   "=10795&seat_num=&wheel_side=&registration=&country=&country_origin=&city=&damaged%5B%5D=3799"
                   "&registration_price=&appleCarPlay=1&page=&sort=")
-    from mongo.database import get_database
     db_connection = await get_database()
     await scrape_all_pages(search_url, db_connection)
 
