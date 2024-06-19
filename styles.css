@@ -1,0 +1,53 @@
+/* styles.css */
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.filters {
+    margin-bottom: 20px;
+}
+
+.filter-row {
+    margin-bottom: 10px;
+}
+
+.hidden {
+    display: none;
+}
+
+.group {
+    border: 1px solid #ccc;
+    padding: 10px;
+    margin-bottom: 10px;
+    display: inline-block;
+    width: 300px;
+    vertical-align: top;
+}
+
+.group img {
+    max-width: 100%;
+}
+
+.car-list {
+    list-style-type: none;
+    padding: 0;
+}
+
+.car-list li {
+    margin-bottom: 5px;
+}
+
+.car-list a {
+    text-decoration: none;
+    color: #000;
+}
+
+.car-list a:hover {
+    text-decoration: underline;
+}
+
+.select2-container {
+    width: 100% !important;
+}
