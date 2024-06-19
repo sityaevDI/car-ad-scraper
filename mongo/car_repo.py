@@ -110,3 +110,25 @@ class CarRepository:
             group["cars"] = [self.car_from_mongo(car) for car in group["cars"]]
             grouped_data.append(group)
         return grouped_data
+
+    async def get_makes_and_models(self) -> dict[str, list[str]]:
+        pipeline = [
+            {
+                "$group": {
+                    "_id": "$make",
+                    "models": {"$addToSet": "$model"}
+                }
+            },
+            {
+                "$project": {
+                    "_id": 0,
+                    "make": "$_id",
+                    "models": 1
+                }
+            }
+        ]
+
+        aggregation_result = await self.db.car_collection.aggregate(pipeline).to_list(length=None)
+
+        result = {item['make']: item['models'] for item in aggregation_result}
+        return result

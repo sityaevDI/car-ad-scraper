@@ -5,30 +5,63 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Car Listings</title>
     <link rel="stylesheet" href="styles.css">
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet"/>
+    <style>
+        .filter-container {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .filter-container select {
+            margin-right: 10px;
+            width: 200px;
+        }
+        .filter-container .model-select {
+            width: 300px;
+        }
+        .filter-container button {
+            margin-left: 10px;
+        }
+    </style>
 </head>
+
 <body>
-    <div class="container">
-        <h1>Car Listings</h1>
-        <div class="filters">
-            <div class="filter-row">
-                <label for="group-by">Group By:</label>
-                <div id="group-by">
-                    <label><input type="checkbox" value="make" checked> Make</label>
-                    <label><input type="checkbox" value="model" checked> Model</label>
-                    <label><input type="checkbox" value="year"> Year</label>
-                </div>
-                <label for="min-count">Min Count:</label>
-                <input type="number" id="min-count" value="1" min="1">
-                <button id="fetch-data">Fetch Data</button>
-            </div>
-            <div class="filter-row">
-                <label for="search-url">Search URL:</label>
-                <input type="text" id="search-url" placeholder="Enter search URL">
-                <button id="scrape-data">Scrape by URL</button>
+<div class="container">
+    <h1>Car Listings</h1>
+    <div class="filters">
+        <div class="filter-row">
+            <label>Group By:</label>
+            <div id="group-by">
+                <label><input type="checkbox" value="make" checked>Make</label>
+                <label><input type="checkbox" value="model" checked>Model</label>
+                <label><input type="checkbox" value="year">Year</label>
             </div>
         </div>
-        <div id="results"></div>
+        <div class="filter-row">
+            <label for="min-count">Min Count:</label>
+            <input type="number" id="min-count" value="1" min="1">
+        </div>
+        <div class="filter-row">
+            <label for="search-url">Search URL:</label>
+            <input type="text" id="search-url">
+        </div>
+        <div class="filter-row">
+            <button id="fetch-data">Fetch Data</button>
+            <button id="scrape-data">Scrape by URL</button>
+        </div>
+        <div id="include-filters">
+            <h3>Include Makes/Models</h3>
+            <button id="add-include-filter">+ Add Make Filter</button>
+        </div>
+        <div id="exclude-filters">
+            <h3>Exclude Makes/Models</h3>
+            <button id="add-exclude-filter">- Add Makes/Models to Exclude</button>
+        </div>
     </div>
-    <script src="script.js"></script>
+    <div id="results"></div>
+</div>
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-beta.1/dist/js/select2.min.js"></script>
+<script src="script.js"></script>
 </body>
 </html>

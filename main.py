@@ -1,10 +1,15 @@
 import asyncio
+import datetime
 import re
 import time
+from math import ceil
+from typing import AsyncGenerator
 from urllib.parse import urlparse, parse_qs, urlencode
+import random
 
 import requests
 from bs4 import BeautifulSoup, Tag
+from pymongo import UpdateOne
 
 from mongo.car_repo import CarRepository
 from mongo.database import DataBase, get_database
@@ -16,7 +21,7 @@ async def scrape_all_pages(car_list_url: str, db_connection: DataBase):
     page, total_cars = 1, 0
     while True:
         updated_url = update_page_number(car_list_url, page)
-        response = requests.get(updated_url, headers=default_request_headers)
+        response = requests.get(updated_url, headers=default_request_headers())
         if response.status_code != 200:
             print(f"Failed to retrieve the page. Status code: {response.status_code}")
             return
@@ -52,13 +57,18 @@ async def scrape_one_search_page(response_text, db_connection):
         img_tag = link_tag.find('img', class_='lazy lead')
         if car_link and not await repo.get_car(car_link):
             car_url = 'https://www.polovniautomobili.com' + car_link
-            response = requests.get(car_url, headers=default_request_headers)
+            response = requests.get(car_url, headers=default_request_headers())
+            if not response.status_code == 200:
+                time.sleep(random.uniform(0.5, 1.5))
+                response = requests.get(car_url, headers=default_request_headers())
+
             parser = CarParser(CarAdvShortInfo(
                 ad_link=car_link,
                 img_link=img_tag['data-srcset'] if img_tag else None,
             ), get_soup_from_response(response))
             await repo.save_car(parser.get_car_details())
-            time.sleep(0.2)
+            time.sleep(random.uniform(0.5, 1.5))
+
             cars_counter += 1
     return cars_counter
 
@@ -78,7 +88,8 @@ async def main():
                   "=10795&seat_num=&wheel_side=&registration=&country=&country_origin=&city=&damaged%5B%5D=3799"
                   "&registration_price=&appleCarPlay=1&page=&sort=")
     db_connection = await get_database()
-    await scrape_all_pages(search_url, db_connection)
+
+    await scrape_pipe(search_url)
 
 
 if __name__ == "__main__":

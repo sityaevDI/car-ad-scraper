@@ -1,5 +1,7 @@
+import asyncio
+import json
 import re
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Iterable
 from urllib.parse import urlparse, parse_qs
 
 from fastapi import FastAPI, Query, HTTPException, Depends
@@ -9,7 +11,8 @@ from pydantic import BaseModel
 from main import scrape_all_pages
 from mongo.car_repo import CarRepository, Car
 from mongo.database import get_database, DataBase
-from mongo.specifications import DecimalRangeParameter, SubSetParameter, OneOfParameter, SimpleParameter, MakeParameter
+from mongo.specifications import DecimalRangeParameter, SubSetParameter, OneOfParameter, SimpleParameter, MakeParameter, \
+    Specification
 from scraping.translation import safety_features_translation, additional_options_translation, condition_translation, \
     body_type_codes, fuel_type_codes, gearbox_codes, wheel_side_codes, ac_type_codes, condition_codes, \
     emission_class_codes, interior_material_codes
@@ -50,14 +53,32 @@ async def group_cars(group_by: List[str], db: DataBase, min_count: int = 1, data
     return results
 
 
+@app.get('/cars/makes', response_model=dict[str, list[str]])
+async def get_car_makes(db: DataBase = Depends(get_database)):
+    repo = CarRepository(db)
+    data = await repo.get_makes_and_models()
+    return data
+
+
 @app.get("/cars/grouped", response_model=List[Dict[str, Any]], )
 async def get_grouped_cars(
         group_by: List[str] = Query(..., description="Fields to group by: make, model, year"),
         min_count: Optional[int] = Query(1),
-        search_url: Optional[str] = Query(description="Search bar field from polovni automobili"),
+        search_url: Optional[str] = Query(None, description="Search bar field from polovni automobili"),
+        makes_to_include: Any = '{}',
+        makes_to_exclude: Any = '{}',
         db: DataBase = Depends(get_database)):
     parsed_url = urlparse(search_url)
-    query = _get_mongo_query_from_url(parsed_url)
+    if parsed_url.query:
+        query_params = dict((k, v if len(v) > 1 or k.endswith('[]') else v[0])
+                            for k, v in parse_qs(parsed_url.query).items())
+    else:
+        query_params = {}
+    query_params.update(
+        {'makes_to_include': json.loads(makes_to_include),
+         'makes_to_exclude': json.loads(makes_to_exclude)})
+    specifications = _uri_params_to_specs(query_params)
+    query = _mongo_query_from_specs(specifications)
     grouped_data = await group_cars(db=db, group_by=group_by, min_count=min_count, data_filter=query)
     return grouped_data
 
@@ -97,15 +118,12 @@ def _to_snake_case(param: str) -> str:
 async def scrape_ads_from_url(
         body: ScrapeBody,
         db: DataBase = Depends(get_database)):
-    total_cars = await scrape_all_pages(body.search_url, db)
-    return f"cars saved: {total_cars}"
+    await asyncio.create_task(scrape_all_pages(body.search_url, db))
+    # todo: feature request - create task id with possibility to track scrape completion
+    return "Scrape search started with id {}"
 
 
-def _get_mongo_query_from_url(parsed_url):
-    if not parsed_url.query:
-        return None
-    query_params = dict((k, v if len(v) > 1 or k.endswith('[]') else v[0])
-                        for k, v in parse_qs(parsed_url.query).items())
+def _uri_params_to_specs(query_params: dict) -> set[Specification] | None:
     query_params = {_to_snake_case(param): value for param, value in query_params.items()}
 
     price = DecimalRangeParameter('price', query_params.get('price_from'), query_params.get('price_to'))
@@ -141,9 +159,10 @@ def _get_mongo_query_from_url(parsed_url):
     wheel_side = (wheel_side_codes.get(int(query_params.get('wheel_side')))
                   if query_params.get('wheel_side') else None)
     wheel_side = SimpleParameter('steering_side', wheel_side)
-    car_1_make, car_1_model = query_params.get('brand'), query_params.get('model[]')
-    car_2_make, car_2_model = query_params.get('brand2'), query_params.get('model2[]')
-    make = MakeParameter({car_1_make: car_1_model, car_2_make: car_2_model})
+    car_1_make, car_1_models = query_params.get('brand'), query_params.get('model[]')
+    car_2_make, car_2_models = query_params.get('brand2'), query_params.get('model2[]')
+    query_params.get('makes_to_include').update({car_1_make: car_1_models, car_2_make: car_2_models})
+    make = MakeParameter(query_params.get('makes_to_include'), query_params.get('makes_to_exclude'))
 
     ac_type = [ac_type_codes.get(int(ac_code)) for ac_code in query_params.get('air_condition[]', [])]
     ac_type = OneOfParameter('climate_control', ac_type)
@@ -161,8 +180,12 @@ def _get_mongo_query_from_url(parsed_url):
     # todo: implement additional parameters for door count
     model_filter = {price, year, power_kw, engine_capacity, mileage, safety, options, condition, body_types, fuel_type,
                     gearbox, wheel_side, make, ac_type, damage, emission_class, interior_material}
+    return model_filter
+
+
+def _mongo_query_from_specs(specifications: Iterable[Specification]):
     query = {}
-    for spec in model_filter:
+    for spec in specifications:
         try:
             spec_query = spec.to_query()
         except ValueError:
