@@ -1,3 +1,4 @@
+import datetime
 from typing import Optional, AsyncGenerator
 
 from bson import ObjectId
@@ -39,6 +40,7 @@ class Car(BaseModel):
     import_country: Optional[str] = None
     options: Optional[list[str]] = Field(default_factory=list)
     details: Optional[list[str]] = None
+    createdAt: datetime.datetime
 
     class Config:
         arbitrary_types_allowed = True

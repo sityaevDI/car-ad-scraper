@@ -1,29 +1,57 @@
 import asyncio
 import datetime
+import random
 import re
 import time
-from math import ceil
-from typing import AsyncGenerator
 from urllib.parse import urlparse, parse_qs, urlencode
-import random
 
 import requests
 from bs4 import BeautifulSoup, Tag
 from pymongo import UpdateOne
+from requests import Response
 
 from mongo.car_repo import CarRepository
 from mongo.database import DataBase, get_database
 from scraping.car_parser import CarParser, CarAdvShortInfo
-from scraping.utilities import default_request_headers, strip_query_parameters, get_soup_from_response
+from scraping.utilities import default_request_headers, strip_query_parameters, get_soup_from_response, logger
+
+
+def get_with_retry(url, params=None, **kwargs):
+    result: Response = requests.get(url, params, **kwargs)
+    time.sleep(random.uniform(0.5, 1.5))
+    retries = 5
+    while result.status_code != 200:
+        result: Response = requests.get(url, params, **kwargs)
+        time.sleep(random.uniform(1, 2))
+        retries -= 1
+    if result.status_code != 200:
+        logger.warning(f"Failed to retrieve the page. Page url: %s", url)
+    return result
+
+
+async def update_short_car_info(old_car_ads: list[CarAdvShortInfo], db: DataBase):
+    operations = []
+    for car_ad in old_car_ads:
+        filter_query = {"ad_number": car_ad.ad_number}
+        update_query = {
+            "$set": {
+                "ad_link": car_ad.ad_link,
+                "updatedAt": datetime.datetime.now(datetime.timezone.utc)
+            }
+        }
+        operations.append(UpdateOne(filter_query, update_query, upsert=False))
+
+    if operations:
+        result = await db.car_collection.bulk_write(operations)
+        return result.bulk_api_result
 
 
 async def scrape_all_pages(car_list_url: str, db_connection: DataBase):
     page, total_cars = 1, 0
     while True:
         updated_url = update_page_number(car_list_url, page)
-        response = requests.get(updated_url, headers=default_request_headers())
+        response = get_with_retry(updated_url, headers=default_request_headers())
         if response.status_code != 200:
-            print(f"Failed to retrieve the page. Status code: {response.status_code}")
             return
         soup = get_soup_from_response(response)
         total_cars += await scrape_one_search_page(response.text, db_connection)
@@ -32,6 +60,7 @@ async def scrape_all_pages(car_list_url: str, db_connection: DataBase):
         if to_ad == total_ads:
             break
         page += 1
+    logger.info("Scrape completed. Page scraped: %s, new ads: %s, total ads: %s", page, total_cars, total_ads)
     return total_cars
 
 
@@ -49,27 +78,32 @@ async def scrape_one_search_page(response_text, db_connection):
     repo = CarRepository(db_connection)
     soup = BeautifulSoup(response_text, 'html.parser')
     ad_pattern = re.compile(r'classified ad-\d+.*')
+    ad_number_pattern = r'/auto-oglasi/(\d+)/'
+
     ads = soup.find_all('article', class_=lambda x: x and ad_pattern.search(x) and 'uk-hidden' not in x)
     cars_counter = 0
+    cars_to_update = []
     for ad in ads:
         link_tag = ad.find('a', class_='firstImage')
         car_link = strip_query_parameters(link_tag['href'])
         img_tag = link_tag.find('img', class_='lazy lead')
+        match = re.search(ad_number_pattern, car_link)
+        car_info = CarAdvShortInfo(
+            ad_number=int(match.group(1)) if match else None,
+            ad_link=car_link,
+            img_link=img_tag['data-srcset'] if img_tag else None)
+
         if car_link and not await repo.get_car(car_link):
             car_url = 'https://www.polovniautomobili.com' + car_link
-            response = requests.get(car_url, headers=default_request_headers())
-            if not response.status_code == 200:
-                time.sleep(random.uniform(0.5, 1.5))
-                response = requests.get(car_url, headers=default_request_headers())
+            response = get_with_retry(car_url, headers=default_request_headers())
 
-            parser = CarParser(CarAdvShortInfo(
-                ad_link=car_link,
-                img_link=img_tag['data-srcset'] if img_tag else None,
-            ), get_soup_from_response(response))
+            parser = CarParser(car_info, get_soup_from_response(response))
             await repo.save_car(parser.get_car_details())
-            time.sleep(random.uniform(0.5, 1.5))
-
             cars_counter += 1
+        else:
+            cars_to_update.append(car_info)
+
+    await update_short_car_info(cars_to_update, db_connection)
     return cars_counter
 
 
@@ -77,6 +111,7 @@ def update_page_number(url, new_page_number):
     parsed_url = urlparse(url)
     query_parameters = parse_qs(parsed_url.query)
     query_parameters['page'] = [str(new_page_number)]
+    query_parameters.pop('tag', None)
     return parsed_url._replace(query=urlencode(query_parameters, doseq=True)).geturl()
 
 
@@ -89,7 +124,7 @@ async def main():
                   "&registration_price=&appleCarPlay=1&page=&sort=")
     db_connection = await get_database()
 
-    await scrape_pipe(search_url)
+    await scrape_all_pages(search_url, db_connection)
 
 
 if __name__ == "__main__":

@@ -30,7 +30,7 @@ class DataBase:
         self.car_collection: AsyncIOMotorCollection = self.database.get_collection("cars")
         if self.car_collection is None:
             await self.database.create_collection("cars", capped=True, size=1000)
-        await self.car_collection.create_index('createdAt', expireAfterSeconds=7 * 24 * 60 * 60)
+        await self.car_collection.create_index('updatedAt', expireAfterSeconds=7 * 24 * 60 * 60)
         await self.car_collection.create_index([('ad_number', 1)], unique=True)
 
     async def disconnect(self):

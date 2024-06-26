@@ -227,8 +227,8 @@ function displayResults(groups) {
             updateCarList(carList, sortedCars);
         });
 
-        // Default sorting by price
-        const sortedCars = [...group.cars].sort((a, b) => a.price - b.price);
+        // Default sorting by year
+        const sortedCars = [...group.cars].sort((a, b) => a.year - b.year);
         updateCarList(carList, sortedCars);
 
         groupDiv.appendChild(sortSelect);

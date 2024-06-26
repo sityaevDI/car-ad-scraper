@@ -1,3 +1,4 @@
+import re
 from typing import Any
 
 
@@ -70,7 +71,8 @@ class MakeParameter(Specification):
 
     @staticmethod
     def normalize_string(str_value: str) -> str:
-        return ' '.join(str.capitalize(a) for a in str_value.split('-'))
+        """Unification of naming standard for Make and Model fields"""
+        return ' '.join(str.capitalize(a) for a in re.split('[- ]', str_value))
 
     def to_query(self) -> dict[str, Any]:
         or_clauses = []
