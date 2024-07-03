@@ -21,7 +21,8 @@ app = FastAPI()
 
 origins = [
     "http://localhost:63342",
-    "http://0.0.0.0:8000"
+    "http://0.0.0.0:8000",
+    "http://localhost:3000"
 ]
 
 app.add_middleware(
@@ -91,7 +92,9 @@ def _to_snake_case(param: str) -> str:
 async def scrape_ads_from_url(
         body: ScrapeBody,
         db: DataBase = Depends(get_database)):
-    await asyncio.create_task(scrape_all_pages(body.search_url, db))
+    task = await asyncio.create_task(scrape_all_pages(body.search_url, db))
+    if task.exception():
+        print(task.exception())
     # todo: feature request - create task id with possibility to track scrape completion
     return "Scrape search started with id {}"
 
