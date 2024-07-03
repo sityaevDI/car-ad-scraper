@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from main import scrape_all_pages
-from mongo.car_repo import CarRepository, Car
+from mongo.car_repo import CarRepository
 from mongo.database import get_database, DataBase
 from mongo.specifications import DecimalRangeParameter, SubSetParameter, OneOfParameter, SimpleParameter, MakeParameter, \
     Specification
@@ -21,7 +21,8 @@ app = FastAPI()
 
 origins = [
     "http://localhost:63342",
-    "http://0.0.0.0:8000"
+    "http://0.0.0.0:8000",
+    "http://localhost:3000"
 ]
 
 app.add_middleware(
@@ -31,14 +32,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-async def retrieve_cars(filters: Dict[str, Any], db):
-    cars = []
-    repo = CarRepository(db)
-    async for car in repo.get_cars(filters):
-        cars.append(repo.car_from_mongo(car))
-    return cars
 
 
 async def group_cars(group_by: List[str], db: DataBase, min_count: int = 1, data_filter: dict = None, ):
@@ -83,25 +76,6 @@ async def get_grouped_cars(
     return grouped_data
 
 
-@app.get("/cars", response_model=List[Car])
-async def get_cars(
-        make: str | None = Query(None),
-        model: Optional[str] = Query(None),
-        year: Optional[int] = Query(None),
-        db: DataBase = Depends(get_database)
-):
-    filters = {}
-    if make:
-        filters["make"] = make
-    if model:
-        filters["model"] = model
-    if year:
-        filters["year"] = year
-
-    cars = await retrieve_cars(filters, db)
-    return cars
-
-
 class ScrapeBody(BaseModel):
     search_url: str
     start_page: int = 1
@@ -118,7 +92,9 @@ def _to_snake_case(param: str) -> str:
 async def scrape_ads_from_url(
         body: ScrapeBody,
         db: DataBase = Depends(get_database)):
-    await asyncio.create_task(scrape_all_pages(body.search_url, db))
+    task = await asyncio.create_task(scrape_all_pages(body.search_url, db))
+    if task.exception():
+        print(task.exception())
     # todo: feature request - create task id with possibility to track scrape completion
     return "Scrape search started with id {}"
 

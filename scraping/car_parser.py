@@ -139,6 +139,7 @@ class CarParser:
             'price': price,
             'exchange': car_info_section.find(string='Zamena:').find_next('div').text.strip(),
             'ad_number': int(car_info_section.find(string='Broj oglasa:').find_next('div').text.strip()),
-            'createdAt': datetime.now(timezone.utc)
+            'createdAt': datetime.now(timezone.utc),
+            'updatedAt': datetime.now(timezone.utc)
         }
         return basic_car_info

@@ -1,9 +1,12 @@
-from typing import Optional, AsyncGenerator
+import datetime
+from typing import Optional
 
 from bson import ObjectId
 from pydantic import BaseModel, Field
+from pymongo import UpdateOne
 
-from mongo.database import DataBase
+from mongo.database import DataBase, db_logger
+from scraping.car_parser import CarAdvShortInfo
 
 
 class Car(BaseModel):
@@ -39,6 +42,7 @@ class Car(BaseModel):
     import_country: Optional[str] = None
     options: Optional[list[str]] = Field(default_factory=list)
     details: Optional[list[str]] = None
+    createdAt: datetime.datetime
 
     class Config:
         arbitrary_types_allowed = True
@@ -58,6 +62,7 @@ class CarRepository:
             replacement=car_details,
             upsert=True
         )
+        db_logger.debug('Saved new car, ad #%s', car_details['ad_number'])
 
     @staticmethod
     def car_from_mongo(document: dict) -> Car:
@@ -68,15 +73,8 @@ class CarRepository:
         except Exception as e:
             print(e)
 
-    async def get_car(self, link: str) -> dict:
-        return await self.db.car_collection.find_one({'link': link})
-
-    async def get_cars(self, filters: dict) -> AsyncGenerator[dict, None]:
-        async for car_doc in self.db.car_collection.find(filters):
-            yield car_doc
-
-    async def delete_car(self, link: str):
-        await self.db.car_collection.delete_one({'link': link})
+    async def get_car(self, ad_number: int) -> dict:
+        return await self.db.car_collection.find_one({'ad_number': ad_number})
 
     async def get_grouped_data(self, group_by: list, data_filter: dict, min_count: int = 1):
         group_id = {field: f"${field}" for field in group_by}
@@ -132,3 +130,20 @@ class CarRepository:
 
         result = {item['make']: item['models'] for item in aggregation_result}
         return result
+
+    async def update_short_car_info(self, old_car_ads: list[CarAdvShortInfo], db: DataBase):
+        operations = []
+        for car_ad in old_car_ads:
+            filter_query = {"ad_number": car_ad.ad_number}
+            update_query = {
+                "$set": {
+                    "ad_link": car_ad.ad_link,
+                    "updatedAt": datetime.datetime.now(datetime.timezone.utc)
+                }
+            }
+            operations.append(UpdateOne(filter_query, update_query, upsert=False))
+
+        if operations:
+            result = await self.db.car_collection.bulk_write(operations)
+            db_logger.debug('Updated %s records', len(operations))
+            return result.bulk_api_result

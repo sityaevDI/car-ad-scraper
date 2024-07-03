@@ -1,4 +1,5 @@
 let makesAndModels = null;
+const baseUrl = 'http://localhost:8000';
 
 document.getElementById('fetch-data').addEventListener('click', fetchData);
 document.getElementById('scrape-data').addEventListener('click', scrapeAndFetchData);
@@ -14,7 +15,6 @@ async function fetchData() {
     const excludeFilters = getFilters('exclude-filters');
     const searchUrl = document.getElementById('search-url').value;
 
-    const baseUrl = 'http://0.0.0.0:8000';
     const url = new URL(`${baseUrl}/cars/grouped`);
     url.searchParams.append('min_count', minCount);
     for (gb_param in groupBy) {
@@ -46,7 +46,6 @@ async function fetchData() {
 
 async function scrapeAndFetchData() {
     const searchUrl = document.getElementById('search-url').value;
-    const baseUrl = 'http://0.0.0.0:8000';
 
     try {
         const response = await fetch(`${baseUrl}/ads`, {
@@ -128,7 +127,6 @@ function addFilter(containerId) {
 }
 
 async function fetchMakesAndModels(callback) {
-    const baseUrl = 'http://0.0.0.0:8000';
 
     try {
         const response = await fetch(`${baseUrl}/cars/makes`);
@@ -227,8 +225,8 @@ function displayResults(groups) {
             updateCarList(carList, sortedCars);
         });
 
-        // Default sorting by price
-        const sortedCars = [...group.cars].sort((a, b) => a.price - b.price);
+        // Default sorting by year
+        const sortedCars = [...group.cars].sort((a, b) => a.year - b.year);
         updateCarList(carList, sortedCars);
 
         groupDiv.appendChild(sortSelect);

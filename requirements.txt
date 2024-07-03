@@ -1,0 +1,7 @@
+pymongo
+pydantic
+motor
+fastapi
+requests
+beautifulsoup4
+Brotli
