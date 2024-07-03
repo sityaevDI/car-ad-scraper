@@ -1,13 +1,20 @@
+import logging
 import random
 import re
-from logging import getLogger, DEBUG
 from urllib.parse import urlparse
 
 import brotli
 from bs4 import Tag, BeautifulSoup
 
-logger = getLogger("scraper")
-logger.setLevel(DEBUG)
+logger = logging.getLogger("scraper")
+logger.setLevel(logging.INFO)
+
+if not logger.hasHandlers():
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter(fmt='%(asctime)s %(levelname)s %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
+    handler.setLevel(logging.INFO)
+    logger.addHandler(handler)
+
 user_agent_list = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.82 Safari/537.36',
     'Mozilla/5.0 (iPhone; CPU iPhone OS 14_4_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 '

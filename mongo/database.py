@@ -1,6 +1,17 @@
+import logging
 import os
 
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorCollection
+
+formatter = logging.Formatter(fmt='%(asctime)s %(levelname)s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+
+db_logger = logging.getLogger("mongo_repo")
+db_logger.setLevel(logging.DEBUG)
+if not db_logger.hasHandlers():
+    handler = logging.FileHandler("db_operations.log")
+    handler.setFormatter(formatter)
+    handler.setLevel(logging.DEBUG)
+    db_logger.addHandler(handler)
 
 MONGODB_URL = os.getenv("MONGODB_URL", "")  # deploying without docker-compose
 

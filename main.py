@@ -1,5 +1,4 @@
 import asyncio
-import datetime
 import random
 import re
 import time
@@ -7,7 +6,6 @@ from urllib.parse import urlparse, parse_qs, urlencode
 
 import requests
 from bs4 import BeautifulSoup, Tag
-from pymongo import UpdateOne
 from requests import Response
 
 from mongo.car_repo import CarRepository
@@ -27,23 +25,6 @@ def get_with_retry(url, params=None, **kwargs):
     if result.status_code != 200:
         logger.warning(f"Failed to retrieve the page. Page url: %s", url)
     return result
-
-
-async def update_short_car_info(old_car_ads: list[CarAdvShortInfo], db: DataBase):
-    operations = []
-    for car_ad in old_car_ads:
-        filter_query = {"ad_number": car_ad.ad_number}
-        update_query = {
-            "$set": {
-                "ad_link": car_ad.ad_link,
-                "updatedAt": datetime.datetime.now(datetime.timezone.utc)
-            }
-        }
-        operations.append(UpdateOne(filter_query, update_query, upsert=False))
-
-    if operations:
-        result = await db.car_collection.bulk_write(operations)
-        return result.bulk_api_result
 
 
 async def scrape_all_pages(car_list_url: str, db_connection: DataBase):
@@ -88,12 +69,13 @@ async def scrape_one_search_page(response_text, db_connection):
         car_link = strip_query_parameters(link_tag['href'])
         img_tag = link_tag.find('img', class_='lazy lead')
         match = re.search(ad_number_pattern, car_link)
+        ad_number = int(match.group(1))
         car_info = CarAdvShortInfo(
-            ad_number=int(match.group(1)) if match else None,
+            ad_number=ad_number,
             ad_link=car_link,
             img_link=img_tag['data-srcset'] if img_tag else None)
 
-        if car_link and not await repo.get_car(car_link):
+        if car_link and not await repo.get_car(ad_number):
             car_url = 'https://www.polovniautomobili.com' + car_link
             response = get_with_retry(car_url, headers=default_request_headers())
 
@@ -103,7 +85,7 @@ async def scrape_one_search_page(response_text, db_connection):
         else:
             cars_to_update.append(car_info)
 
-    await update_short_car_info(cars_to_update, db_connection)
+    await repo.update_short_car_info(cars_to_update, db_connection)
     return cars_counter
 
 

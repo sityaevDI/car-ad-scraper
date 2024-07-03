@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from main import scrape_all_pages
-from mongo.car_repo import CarRepository, Car
+from mongo.car_repo import CarRepository
 from mongo.database import get_database, DataBase
 from mongo.specifications import DecimalRangeParameter, SubSetParameter, OneOfParameter, SimpleParameter, MakeParameter, \
     Specification
@@ -31,14 +31,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-async def retrieve_cars(filters: Dict[str, Any], db):
-    cars = []
-    repo = CarRepository(db)
-    async for car in repo.get_cars(filters):
-        cars.append(repo.car_from_mongo(car))
-    return cars
 
 
 async def group_cars(group_by: List[str], db: DataBase, min_count: int = 1, data_filter: dict = None, ):
@@ -81,25 +73,6 @@ async def get_grouped_cars(
     query = _mongo_query_from_specs(specifications)
     grouped_data = await group_cars(db=db, group_by=group_by, min_count=min_count, data_filter=query)
     return grouped_data
-
-
-@app.get("/cars", response_model=List[Car])
-async def get_cars(
-        make: str | None = Query(None),
-        model: Optional[str] = Query(None),
-        year: Optional[int] = Query(None),
-        db: DataBase = Depends(get_database)
-):
-    filters = {}
-    if make:
-        filters["make"] = make
-    if model:
-        filters["model"] = model
-    if year:
-        filters["year"] = year
-
-    cars = await retrieve_cars(filters, db)
-    return cars
 
 
 class ScrapeBody(BaseModel):
