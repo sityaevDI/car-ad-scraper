@@ -71,7 +71,7 @@ def get_soup_from_response(response):
 
 
 def safe_extract_text(section: Tag, label: str):
-    element = section.find(string=re.compile(rf'{label}\s*:?\s*'))
+    element = section.find(string=re.compile(rf'{re.escape(label)}\s*:?\s*'))
     if element:
         return element.find_next('div').text.strip()
     return None

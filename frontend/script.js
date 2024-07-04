@@ -188,7 +188,11 @@ function displayResults(groups) {
         const priceRange = (minPrice === maxPrice) ? `EUR ${minPrice}` : `EUR ${minPrice} - EUR ${maxPrice}`;
 
         const groupHeader = document.createElement('h2');
-        groupHeader.innerText = `${group.make} ${group.model} ${yearRange} (${group.count}) - ${priceRange}`;
+        const make = group.make || group.makes[0];
+
+        const model = group.model || '';
+        groupHeader.innerText = `${make} ${model ? model + ' ' : ''}${yearRange} (${group.count}) - ${priceRange}`;
+
         groupDiv.appendChild(groupHeader);
 
         const img = document.createElement('img');

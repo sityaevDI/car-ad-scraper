@@ -46,61 +46,54 @@ class CarParser:
         condition_features = self._get_condition(classified_content)
         self.car_info['details'] = condition_features
 
-        description_section = classified_content.find('div', {'id': 'classifiedReplaceDescription'})
-        if description_section:
+        if description_section := classified_content.find('div', {'id': 'classifiedReplaceDescription'}):
             basic_car_info['description'] = description_section.find('div', class_='description-wrapper').text.strip()
 
         return self.car_info
 
     @staticmethod
     def _get_condition(classified_content) -> list[str]:
-        condition_info_section = safe_extract_section(classified_content, 'Stanje')
-        if not condition_info_section:
+        if not (condition_info_section := safe_extract_section(classified_content, 'Stanje')):
             return []
-        condition_features = [condition_translation.get(feature.text.strip()) for feature in
-                              condition_info_section.find_all('div', class_='uk-width-medium-1-4')]
-        return condition_features
+        return [condition_translation.get(feature.text.strip()) for feature in
+                condition_info_section.find_all('div', class_='uk-width-medium-1-4')]
 
     @staticmethod
     def _get_options(classified_content) -> list[str]:
-        equipment_info_section = safe_extract_section(classified_content, 'Oprema')
-        if not equipment_info_section:
+        if not (equipment_info_section := safe_extract_section(classified_content, 'Oprema')):
             return []
-        equipment_features = [additional_options_translation.get(feature.text.strip()) for feature in
-                              equipment_info_section.find_all('div', class_='uk-width-medium-1-4')]
-        return equipment_features
+        return [additional_options_translation.get(feature.text.strip()) for feature in
+                equipment_info_section.find_all('div', class_='uk-width-medium-1-4')]
 
     @staticmethod
     def _get_safety_features(classified_content) -> list[str]:
-        safety_info_section = safe_extract_section(classified_content, 'Sigurnost')
-        if not safety_info_section:
+        if not (safety_info_section := safe_extract_section(classified_content, 'Sigurnost')):
             return []
-        safety_features = [safety_features_translation.get(feature.text.strip()) for feature in
-                           safety_info_section.find_all('div', class_='uk-width-medium-1-4')]
-        return safety_features
+        return [safety_features_translation.get(feature.text.strip()) for feature in
+                safety_info_section.find_all('div', class_='uk-width-medium-1-4')]
 
     @staticmethod
     def _get_additional_info(classified_content):
         additional_info_section = classified_content.find(string=re.compile(r'Dodatne informacije\s*')).find_next('div')
         additional_car_info = {
-            'emission_class': additional_info_section.find(string='Emisiona klasa motora').find_next(
-                'div').text.strip(),
+            'emission_class': safe_extract_text(additional_info_section, 'Emisiona klasa motora'),
             'drive': additional_info_section.find(string='Pogon').find_next('div').text.strip(),
             'transmission': additional_info_section.find(string='Menjač').find_next('div').text.strip(),
-            'doors': additional_info_section.find(string='Broj vrata').find_next('div').text.strip(),
+            'doors': safe_extract_text(additional_info_section, 'Broj vrata'),
             'seats': additional_info_section.find(string='Broj sedišta').find_next('div').text.strip(),
             'steering_side': additional_info_section.find(string='Strana volana').find_next('div').text.strip(),
             'climate_control': additional_info_section.find(string='Klima').find_next('div').text.strip(),
             'color': additional_info_section.find(string='Boja').find_next('div').text.strip(),
             'interior_material': safe_extract_text(additional_info_section, 'Materijal enterijera'),
             'interior_color': safe_extract_text(additional_info_section, 'Boja enterijera'),
-            'registered_until': additional_info_section.find(string='Registrovan do').find_next('div').text.strip(),
+            'registered_until': safe_extract_text(additional_info_section, 'Registrovan do'),
             'origin': additional_info_section.find(string='Poreklo vozila').find_next('div').text.strip(),
             'damage': additional_info_section.find(string='Oštećenje').find_next('div').text.strip(),
             'import_country': safe_extract_text(additional_info_section, 'Zemlja uvoza'),
-            'sale_method': safe_extract_text(additional_info_section, 'Način prodaje')
-
+            'sale_method': safe_extract_text(additional_info_section, 'Način prodaje'),
         }
+        if bat_rng := safe_extract_text(additional_info_section, 'Domet sa punom baterijom (km)'):
+            additional_car_info['battery_range'] = int(bat_rng)
         return additional_car_info
 
     @staticmethod
@@ -115,8 +108,11 @@ class CarParser:
         mileage = car_info_section.find(string='Kilometraža').find_next('div').text.strip()
         mileage = int(mileage.split()[0].replace('.', ''))
 
-        capacity, unit = car_info_section.find(string='Kubikaža').find_next('div').text.split()
-        capacity = int(capacity if unit == 'cm3' else None)
+        if capacity_tag := car_info_section.find(string='Kubikaža'):
+            capacity, unit = capacity_tag.find_next('div').text.split()
+            capacity = int(capacity if unit == 'cm3' else None)
+        else:
+            capacity = 0
 
         power = car_info_section.find(string='Snaga motora').find_next('div').text.strip()
         power = int(power.split('/')[0])

@@ -92,7 +92,7 @@ def _to_snake_case(param: str) -> str:
 async def scrape_ads_from_url(
         body: ScrapeBody,
         db: DataBase = Depends(get_database)):
-    await asyncio.create_task(scrape_all_pages(body.search_url, db))
+    await asyncio.create_task(scrape_all_pages(body.search_url, db, body.start_page))
     # todo: feature request - create task id with possibility to track scrape completion
     return "Scrape search started with id {}"
 

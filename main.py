@@ -16,7 +16,7 @@ from scraping.utilities import default_request_headers, strip_query_parameters, 
 
 def get_with_retry(url, params=None, **kwargs):
     result: Response = requests.get(url, params, **kwargs)
-    time.sleep(random.uniform(0.5, 1.5))
+    time.sleep(random.uniform(0, 1))
     retries = 5
     while result.status_code != 200:
         result: Response = requests.get(url, params, **kwargs)
@@ -27,22 +27,24 @@ def get_with_retry(url, params=None, **kwargs):
     return result
 
 
-async def scrape_all_pages(car_list_url: str, db_connection: DataBase):
-    page, total_cars = 1, 0
+async def scrape_all_pages(car_list_url: str, db_connection: DataBase, start_page: int = 1):
+    page, cars_saved = start_page, 0
     while True:
         updated_url = update_page_number(car_list_url, page)
         response = get_with_retry(updated_url, headers=default_request_headers())
         if response.status_code != 200:
             return
         soup = get_soup_from_response(response)
-        total_cars += await scrape_one_search_page(response.text, db_connection)
+        prev_cars = cars_saved
+        cars_saved += await scrape_one_search_page(response.text, db_connection)
 
         from_ad, to_ad, total_ads = await _get_ad_counter(soup)
         if to_ad == total_ads:
             break
+        logger.info("Scraped page #%s, added %s ads", page, cars_saved - prev_cars)
         page += 1
-    logger.info("Scrape completed. Page scraped: %s, new ads: %s, total ads: %s", page, total_cars, total_ads)
-    return total_cars
+    logger.info("Scrape completed. Page scraped: %s, new ads: %s, total ads: %s", page, cars_saved, total_ads)
+    return cars_saved
 
 
 async def _get_ad_counter(soup: Tag) -> tuple[int, int, int]:
@@ -80,7 +82,10 @@ async def scrape_one_search_page(response_text, db_connection):
             response = get_with_retry(car_url, headers=default_request_headers())
 
             parser = CarParser(car_info, get_soup_from_response(response))
-            await repo.save_car(parser.get_car_details())
+            try:
+                await repo.save_car(parser.get_car_details())
+            except Exception as e:
+                logger.exception("Unhandled error parsing ad #%s. %s", ad_number, e)
             cars_counter += 1
         else:
             cars_to_update.append(car_info)

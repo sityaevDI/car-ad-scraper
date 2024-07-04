@@ -2,47 +2,23 @@ import datetime
 from typing import Optional
 
 from bson import ObjectId
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from pymongo import UpdateOne
 
 from mongo.database import DataBase, db_logger
 from scraping.car_parser import CarAdvShortInfo
 
 
-class Car(BaseModel):
+class CarForGroup(BaseModel):
     id: Optional[str]
     link: Optional[str]
     img_src: Optional[str]
-    condition: str
     make: str
     model: str
     year: int
-    mileage: int
-    body_type: str
-    fuel_type: str
-    engine_capacity: int
-    engine_power: int
-    fixed_price: str
     price: int
-    exchange: str
-    ad_number: int | str
-    emission_class: str
-    drive: str
-    transmission: str
-    doors: str
-    seats: str
-    steering_side: str
-    climate_control: str
-    color: str
-    interior_material: str | None
-    interior_color: str | None
-    registered_until: str
-    origin: str
-    damage: str
-    import_country: Optional[str] = None
-    options: Optional[list[str]] = Field(default_factory=list)
-    details: Optional[list[str]] = None
-    createdAt: datetime.datetime
+    engine_power: int
+    engine_capacity: int
 
     class Config:
         arbitrary_types_allowed = True
@@ -65,11 +41,11 @@ class CarRepository:
         db_logger.debug('Saved new car, ad #%s', car_details['ad_number'])
 
     @staticmethod
-    def car_from_mongo(document: dict) -> Car:
+    def car_from_mongo(document: dict) -> CarForGroup:
         document["id"] = str(document.pop("_id"))
         document['options'] = [option for option in document.get('options', []) if option is not None]
         try:
-            return Car(**document)
+            return CarForGroup(**document)
         except Exception as e:
             print(e)
 
