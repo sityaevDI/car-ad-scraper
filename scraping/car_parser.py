@@ -99,8 +99,11 @@ class CarParser:
     @staticmethod
     def _get_basic_car_info(classified_content, soup):
         car_info_section = classified_content.find('section', {'class': 'js_fixedContetLoad'})
-        price = int(soup.find('span', {"class": re.compile(r"priceClassified\s")})
-                    .text.strip().split()[0].replace('.', ''))
+        try:
+            price = int(soup.find('span', {"class": re.compile(r"priceClassified\s")})
+                        .text.strip().split()[0].replace('.', ''))
+        except ValueError:
+            price = 0
 
         year = car_info_section.find(string='Godište').find_next('div').text.strip()
         year = int(year.replace('.', ''))

@@ -1,3 +1,4 @@
+python-dotenv
 pymongo
 pydantic
 motor
@@ -5,3 +6,5 @@ fastapi
 requests
 beautifulsoup4
 Brotli
+bson
+uvicorn

@@ -11,8 +11,8 @@ from pydantic import BaseModel
 from main import scrape_all_pages
 from mongo.car_repo import CarRepository
 from mongo.database import get_database, DataBase
-from mongo.specifications import DecimalRangeParameter, SubSetParameter, OneOfParameter, SimpleParameter, MakeParameter, \
-    Specification
+from mongo.specifications import (DecimalRangeParameter, SubSetParameter, OneOfParameter, SimpleParameter,
+                                  MakeParameter, Specification)
 from scraping.translation import safety_features_translation, additional_options_translation, condition_translation, \
     body_type_codes, fuel_type_codes, gearbox_codes, wheel_side_codes, ac_type_codes, condition_codes, \
     emission_class_codes, interior_material_codes
@@ -57,7 +57,7 @@ async def get_car_makes(db: DataBase = Depends(get_database)):
 async def get_grouped_cars(
         group_by: List[str] = Query(..., description="Fields to group by: make, model, year"),
         min_count: Optional[int] = Query(1),
-        search_url: Optional[str] = Query(None, description="Search bar field from polovni automobili"),
+        search_url: Optional[str] = Query(None, description="Search bar field from the website page"),
         makes_to_include: Any = '{}',
         makes_to_exclude: Any = '{}',
         db: DataBase = Depends(get_database)):
