@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest_asyncio
+from fakeredis import FakeAsyncRedis
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.db.base import Base
@@ -20,6 +21,13 @@ async def session():
         yield s
 
     await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def redis():
+    client = FakeAsyncRedis(decode_responses=True)
+    yield client
+    await client.aclose()
 
 
 def make_listing(source_id: uuid.UUID, **overrides) -> Listing:
