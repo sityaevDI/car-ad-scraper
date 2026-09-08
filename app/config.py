@@ -12,6 +12,7 @@ class Settings(BaseSettings):
         "http://localhost:63342",
         "http://0.0.0.0:8000",
         "http://localhost:3000",
+        "http://localhost:5173",
     ]
 
     # Auth: HttpOnly cookie + server-side Redis session (see app/auth/__init__.py).

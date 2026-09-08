@@ -42,7 +42,7 @@ class SearchRequest(BaseModel):
     group_by: list[str] | None = Field(
         default_factory=lambda: ["make", "model", "engine_volume_cc", "fuel_type", "transmission"]
     )
-    min_group_count: int | None = None
+    min_group_count: int | None = Field(default=None, ge=0)
     sort: str = "count_desc"
-    page: int = 1
-    page_size: int = 20
+    page: int = Field(default=1, ge=1)
+    page_size: int = Field(default=20, ge=1, le=100)
