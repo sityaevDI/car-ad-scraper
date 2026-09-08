@@ -1,7 +1,7 @@
-"""Normalized search query. See agent_documents/02_DOMAIN_MODEL.md §5.
+"""Normalized search query. See docs/adr/02_DOMAIN_MODEL.md §5.
 
 Serializable with a stable hash so it can later back saved-search dedup/job-dedup
-(agent_documents/09_QUEUE_PRIORITY.md §9) — not wired up yet, just designed to support it.
+(docs/adr/09_QUEUE_PRIORITY.md §9) — not wired up yet, just designed to support it.
 """
 
 import hashlib

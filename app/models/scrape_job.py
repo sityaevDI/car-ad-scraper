@@ -9,7 +9,7 @@ from app.db.base import Base
 from app.models.mixins import TimestampMixin, UUIDPkMixin
 
 # Schema only — no queue/worker yet (Redis/ARQ job runner is a later phase per
-# agent_documents/09_QUEUE_PRIORITY.md). See agent_documents/02_DOMAIN_MODEL.md §7.
+# docs/adr/09_QUEUE_PRIORITY.md). See docs/adr/02_DOMAIN_MODEL.md §7.
 
 
 class ScrapeJobType(str, enum.Enum):

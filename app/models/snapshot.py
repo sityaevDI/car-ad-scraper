@@ -11,10 +11,10 @@ from app.models.mixins import UUIDPkMixin, utcnow
 class ListingSnapshot(UUIDPkMixin, Base):
     """Append-only history row for a Listing (price/mileage/title over time).
 
-    Never overwritten or deleted — see agent_documents/17_AGENT_INSTRUCTIONS.md "Never overwrite
+    Never overwritten or deleted — see docs/adr/17_AGENT_INSTRUCTIONS.md "Never overwrite
     historical snapshots when the current listing changes". `raw_payload` holds the full raw
     parsed dict from the source adapter (object storage is an open decision — see
-    agent_documents/18_DECISIONS_AND_OPEN_QUESTIONS.md — inline JSON is the MVP stand-in).
+    docs/adr/18_DECISIONS_AND_OPEN_QUESTIONS.md — inline JSON is the MVP stand-in).
     """
 
     __tablename__ = "listing_snapshots"

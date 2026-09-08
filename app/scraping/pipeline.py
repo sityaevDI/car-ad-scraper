@@ -1,5 +1,5 @@
 """Persists a source's search results into Postgres. No job queue yet (that's
-agent_documents/09_QUEUE_PRIORITY.md, a later phase) — this is a directly-awaited pipeline run,
+docs/adr/09_QUEUE_PRIORITY.md, a later phase) — this is a directly-awaited pipeline run,
 triggered manually via `app.scraping.cli` for now.
 """
 

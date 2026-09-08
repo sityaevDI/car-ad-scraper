@@ -7,7 +7,7 @@ from app.models.mixins import TimestampMixin, UUIDPkMixin
 
 class Generation(UUIDPkMixin, TimestampMixin, Base):
     """Canonical vehicle generation. Deliberately thin for MVP — normalization is manual/nullable
-    (see agent_documents/18_DECISIONS_AND_OPEN_QUESTIONS.md), listings link to it via a nullable FK.
+    (see docs/adr/18_DECISIONS_AND_OPEN_QUESTIONS.md), listings link to it via a nullable FK.
     """
 
     __tablename__ = "generations"

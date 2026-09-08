@@ -1,8 +1,8 @@
-"""Grouped/flat search over Listings. See agent_documents/06_SEARCH_MARKET.md.
+"""Grouped/flat search over Listings. See docs/adr/06_SEARCH_MARKET.md.
 
 Deliberately does *not* compute a market price/score/confidence — per the MVP scope decision, a
 price/year/mileage range per group is enough signal for the user to judge a group at a glance.
-That statistical layer (agent_documents/06_SEARCH_MARKET.md §5-8) is a later phase.
+That statistical layer (docs/adr/06_SEARCH_MARKET.md §5-8) is a later phase.
 """
 
 from dataclasses import dataclass

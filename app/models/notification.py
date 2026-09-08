@@ -8,8 +8,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.models.mixins import TimestampMixin, UUIDPkMixin
 
-# Schema only — no delivery (email/in-app) yet. See agent_documents/02_DOMAIN_MODEL.md §8 and
-# agent_documents/10_NOTIFICATIONS.md.
+# Schema only — no delivery (email/in-app) yet. See docs/adr/02_DOMAIN_MODEL.md §8 and
+# docs/adr/10_NOTIFICATIONS.md.
 
 
 class NotificationType(str, enum.Enum):

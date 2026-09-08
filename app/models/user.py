@@ -6,7 +6,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.models.mixins import TimestampMixin, UUIDPkMixin
 
-# Schema only — no auth/repository/routes yet. See agent_documents/02_DOMAIN_MODEL.md §9 and
+# Schema only — no auth/repository/routes yet. See docs/adr/02_DOMAIN_MODEL.md §9 and
 # the plan's "explicitly out of scope" list.
 
 

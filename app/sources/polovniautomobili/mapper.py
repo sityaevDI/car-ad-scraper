@@ -7,7 +7,7 @@ against the real fixtures in `examples/list.html` / `examples/listing.html`, cop
 `tests/fixtures/polovniautomobili/`. The site is now a Next.js app that embeds a fully structured
 JSON payload in a `<script id="__NEXT_DATA__">` tag (`props.pageProps.searchResults.results` on
 the search page, `props.pageProps.productData` on the listing page) — matching the
-"page data layer" reference in agent_documents/17_AGENT_INSTRUCTIONS.md. This mapper reads that
+"page data layer" reference in docs/adr/17_AGENT_INSTRUCTIONS.md. This mapper reads that
 JSON instead. The old code's *vocabulary* (Serbian field values, `scraping/translation.py` code
 tables) is reused below to normalize fuel/gearbox/body values.
 """

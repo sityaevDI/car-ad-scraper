@@ -17,7 +17,7 @@ class ListingStatus(str, enum.Enum):
 
 class Listing(UUIDPkMixin, TimestampMixin, Base):
     """A single listing on a single source. Base unit of the domain — see
-    agent_documents/02_DOMAIN_MODEL.md §1. Never deleted merely because it disappeared from the
+    docs/adr/02_DOMAIN_MODEL.md §1. Never deleted merely because it disappeared from the
     source; ListingSnapshot rows carry its history.
     """
 
