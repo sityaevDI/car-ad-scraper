@@ -1,0 +1,18 @@
+[tool.ruff]
+line-length = 120
+extend-exclude = ["mongo", "scraping", "parsers", "frontend", "api.py", "main.py", "migrations"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+exclude = ["mongo", "scraping", "parsers", "frontend", "api.py", "main.py", "migrations"]
+
+# app/sources/polovniautomobili/adapter.py still imports the legacy scraping/ package (see #10,
+# fetch-strategy abstraction — separately tracked). `exclude` only skips it as an entry point;
+# this stops mypy from also reporting on it when followed as an import.
+[[tool.mypy.overrides]]
+module = "scraping.*"
+ignore_errors = true

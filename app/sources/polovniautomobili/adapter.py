@@ -12,7 +12,7 @@ from urllib.parse import urlencode
 import requests
 
 from app.search.query import SearchQuery
-from app.sources.base import SourceListingRef, SourceListing
+from app.sources.base import SourceListing, SourceListingRef
 from app.sources.polovniautomobili.mapper import BASE_URL, map_product_data, map_search_result, normalize_fuel_type
 from scraping.translation import fuel_type_codes
 from scraping.utilities import default_request_headers

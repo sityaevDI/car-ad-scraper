@@ -22,8 +22,8 @@ def test_parse_search_page_extracts_normalized_listings():
     assert first.production_year > 1990
     assert first.canonical_url.startswith("https://www.polovniautomobili.com/auto-oglasi/")
     # fuel/transmission/body normalized to the mapper's canonical vocabulary, not raw Serbian text
-    assert all(l.fuel_type in {"diesel", "petrol", "hybrid", "electric", "lpg", "cng", None} for l in listings)
-    assert all(l.transmission in {"automatic", "manual", None} for l in listings)
+    assert all(x.fuel_type in {"diesel", "petrol", "hybrid", "electric", "lpg", "cng", None} for x in listings)
+    assert all(x.transmission in {"automatic", "manual", None} for x in listings)
 
 
 def test_parse_listing_extracts_full_detail():
