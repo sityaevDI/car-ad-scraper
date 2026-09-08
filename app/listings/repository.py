@@ -20,7 +20,7 @@ def _description_hash(raw: dict) -> str | None:
 class ListingRepository:
     """Owns Listing/ListingSnapshot persistence. Upserts by (source_id, external_id); always
     appends a new snapshot instead of overwriting history — see
-    agent_documents/17_AGENT_INSTRUCTIONS.md "Never overwrite historical snapshots".
+    docs/adr/17_AGENT_INSTRUCTIONS.md "Never overwrite historical snapshots".
     """
 
     def __init__(self, session: AsyncSession):
@@ -69,6 +69,7 @@ class ListingRepository:
                 power_hp=data.power_hp,
                 location=data.location,
                 seller_type=data.seller_type,
+                image_url=data.image_url,
                 status=ListingStatus.ACTIVE,
                 first_seen_at=now,
                 last_seen_at=now,
@@ -82,6 +83,7 @@ class ListingRepository:
         existing.last_seen_at = now
         existing.last_checked_at = now
         existing.status = ListingStatus.ACTIVE
+        existing.image_url = data.image_url
 
         changed = (
             existing.price != data.price
@@ -98,7 +100,7 @@ class ListingRepository:
 
     async def mark_missing_as_removed(self, source_id: uuid.UUID, seen_external_ids: set[str]) -> int:
         """Mark active listings for a source that were not encountered in the latest crawl as
-        removed. Never deletes rows — see agent_documents/17_AGENT_INSTRUCTIONS.md.
+        removed. Never deletes rows — see docs/adr/17_AGENT_INSTRUCTIONS.md.
 
         Only correct for a full-source crawl. Not called from `scraping/pipeline.py` yet, since
         that pipeline runs one filtered SearchQuery at a time — calling this against a partial

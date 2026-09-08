@@ -8,8 +8,8 @@ from app.db.base import Base
 from app.models.mixins import TimestampMixin, UUIDPkMixin
 
 # Schema only — no billing/entitlement enforcement yet. Plans are deliberately kept separate from
-# the user (agent_documents/02_DOMAIN_MODEL.md §10); monetization is a later phase per the
-# marketer's advice reflected in agent_documents/16_MVP_ROADMAP.md Phase 5.
+# the user (docs/adr/02_DOMAIN_MODEL.md §10); monetization is a later phase per the
+# marketer's advice reflected in docs/adr/16_MVP_ROADMAP.md Phase 5.
 
 
 class SubscriptionPlan(UUIDPkMixin, TimestampMixin, Base):

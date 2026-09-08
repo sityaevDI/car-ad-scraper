@@ -26,6 +26,7 @@ class ListingOut(BaseModel):
     engine_volume_cc: int | None
     power_hp: int | None
     location: str | None
+    image_url: str | None
     status: ListingStatus
     first_seen_at: datetime
     last_seen_at: datetime

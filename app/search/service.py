@@ -1,8 +1,8 @@
-"""Grouped/flat search over Listings. See agent_documents/06_SEARCH_MARKET.md.
+"""Grouped/flat search over Listings. See docs/adr/06_SEARCH_MARKET.md.
 
 Deliberately does *not* compute a market price/score/confidence — per the MVP scope decision, a
 price/year/mileage range per group is enough signal for the user to judge a group at a glance.
-That statistical layer (agent_documents/06_SEARCH_MARKET.md §5-8) is a later phase.
+That statistical layer (docs/adr/06_SEARCH_MARKET.md §5-8) is a later phase.
 """
 
 from dataclasses import dataclass
@@ -162,6 +162,8 @@ class SearchService:
             func.max(Listing.mileage_km).label("mileage_max"),
         )
         stmt = _apply_filters(stmt, request.query).group_by(*group_columns)
+        if request.min_group_count is not None:
+            stmt = stmt.having(func.count(Listing.id) >= request.min_group_count)
 
         if request.sort == "price_asc":
             stmt = stmt.order_by(func.min(Listing.price).asc())

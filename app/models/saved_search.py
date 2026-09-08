@@ -7,7 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.models.mixins import TimestampMixin, UUIDPkMixin
 
-# Schema only — no CRUD/scheduling/matching logic yet. See agent_documents/02_DOMAIN_MODEL.md §6.
+# Schema only — no CRUD/scheduling/matching logic yet. See docs/adr/02_DOMAIN_MODEL.md §6.
 # This is the future home of the "one filter group, alerts across every source" flow the user
 # specifically called out as the standout feature.
 

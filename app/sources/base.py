@@ -1,4 +1,4 @@
-"""Source adapter interface. See agent_documents/04_SCRAPING.md §1.
+"""Source adapter interface. See docs/adr/04_SCRAPING.md §1.
 
 A concrete adapter (e.g. `app.sources.polovniautomobili.adapter.PolovniAutomobiliSource`) must not
 know about Postgres, users or billing — it only turns a SearchQuery into refs/listings.
@@ -43,6 +43,7 @@ class SourceListing:
     power_hp: int | None = None
     location: str | None = None
     seller_type: str | None = None
+    image_url: str | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
 

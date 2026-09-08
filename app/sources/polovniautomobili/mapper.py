@@ -7,7 +7,7 @@ against the real fixtures in `examples/list.html` / `examples/listing.html`, cop
 `tests/fixtures/polovniautomobili/`. The site is now a Next.js app that embeds a fully structured
 JSON payload in a `<script id="__NEXT_DATA__">` tag (`props.pageProps.searchResults.results` on
 the search page, `props.pageProps.productData` on the listing page) — matching the
-"page data layer" reference in agent_documents/17_AGENT_INSTRUCTIONS.md. This mapper reads that
+"page data layer" reference in docs/adr/17_AGENT_INSTRUCTIONS.md. This mapper reads that
 JSON instead. The old code's *vocabulary* (Serbian field values, `scraping/translation.py` code
 tables) is reused below to normalize fuel/gearbox/body values.
 """
@@ -103,8 +103,15 @@ def map_search_result(raw: dict) -> SourceListing:
         power_hp=raw.get("horsePower"),
         location=raw.get("city"),
         seller_type="dealer" if raw.get("dealer") else "private",
+        image_url=raw.get("imageMain"),
         raw=raw,
     )
+
+
+def _primary_image_url(images: list[dict] | None) -> str | None:
+    if not images:
+        return None
+    return min(images, key=lambda img: img.get("ordering", 0)).get("fileName")
 
 
 def map_product_data(raw: dict, canonical_path: str | None = None) -> SourceListing:
@@ -130,5 +137,6 @@ def map_product_data(raw: dict, canonical_path: str | None = None) -> SourceList
         power_hp=raw.get("horsePower"),
         location=raw.get("owner", {}).get("city"),
         seller_type="dealer" if "ROLE_DEALER" in raw.get("owner", {}).get("roles", []) else "private",
+        image_url=_primary_image_url(raw.get("images")),
         raw=raw,
     )
