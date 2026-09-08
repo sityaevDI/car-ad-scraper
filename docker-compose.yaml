@@ -3,11 +3,13 @@ services:
     build:
       context: ./frontend
       args:
-        BASE_URL: "http://backend:8000"
+        # Browser-facing URL for the new Postgres-backed `api` service (see below) — not the
+        # in-network `api:8001` hostname, the browser resolves this outside the compose network.
+        VITE_API_BASE_URL: "http://localhost:8001"
     ports:
       - "3000:80"
     depends_on:
-      - backend
+      - api
 
   backend:
     build:
