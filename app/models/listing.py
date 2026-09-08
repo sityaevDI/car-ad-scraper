@@ -49,6 +49,7 @@ class Listing(UUIDPkMixin, TimestampMixin, Base):
     location: Mapped[str | None] = mapped_column(String(255), nullable=True)
     seller_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     seller_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    image_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
 
     status: Mapped[ListingStatus] = mapped_column(
         Enum(ListingStatus, native_enum=False, length=16), default=ListingStatus.ACTIVE, nullable=False

@@ -86,6 +86,29 @@ async def test_flat_mode_returns_listings_when_group_by_empty(session):
     assert [listing.price for listing in response.listings] == [11_000, 20_000]
 
 
+async def test_min_group_count_drops_small_groups(session):
+    source = await seed_source(session)
+
+    # 2 Octavias -> below threshold
+    session.add(make_listing(source.id, price=11_900))
+    session.add(make_listing(source.id, price=13_500))
+
+    # 3 BMWs -> at threshold, kept
+    for price in (13_200, 14_000, 15_000):
+        session.add(
+            make_listing(source.id, make="BMW", model="320d", price=price, engine_volume_cc=1995)
+        )
+    await session.commit()
+
+    request = SearchRequest(min_group_count=3)
+    response = await SearchService(session).search(request)
+
+    assert response.total_groups == 1
+    assert response.groups[0].label == "BMW 320d 2.0L Diesel Automatic"
+    # total_listings reflects only the surviving groups, not the full unfiltered set
+    assert response.total_listings == 3
+
+
 async def test_invalid_group_by_field_rejected(session):
     from fastapi import HTTPException
 

@@ -69,6 +69,7 @@ class ListingRepository:
                 power_hp=data.power_hp,
                 location=data.location,
                 seller_type=data.seller_type,
+                image_url=data.image_url,
                 status=ListingStatus.ACTIVE,
                 first_seen_at=now,
                 last_seen_at=now,
@@ -82,6 +83,7 @@ class ListingRepository:
         existing.last_seen_at = now
         existing.last_checked_at = now
         existing.status = ListingStatus.ACTIVE
+        existing.image_url = data.image_url
 
         changed = (
             existing.price != data.price

@@ -103,8 +103,15 @@ def map_search_result(raw: dict) -> SourceListing:
         power_hp=raw.get("horsePower"),
         location=raw.get("city"),
         seller_type="dealer" if raw.get("dealer") else "private",
+        image_url=raw.get("imageMain"),
         raw=raw,
     )
+
+
+def _primary_image_url(images: list[dict] | None) -> str | None:
+    if not images:
+        return None
+    return min(images, key=lambda img: img.get("ordering", 0)).get("fileName")
 
 
 def map_product_data(raw: dict, canonical_path: str | None = None) -> SourceListing:
@@ -130,5 +137,6 @@ def map_product_data(raw: dict, canonical_path: str | None = None) -> SourceList
         power_hp=raw.get("horsePower"),
         location=raw.get("owner", {}).get("city"),
         seller_type="dealer" if "ROLE_DEALER" in raw.get("owner", {}).get("roles", []) else "private",
+        image_url=_primary_image_url(raw.get("images")),
         raw=raw,
     )

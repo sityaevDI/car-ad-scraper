@@ -43,6 +43,7 @@ class SourceListing:
     power_hp: int | None = None
     location: str | None = None
     seller_type: str | None = None
+    image_url: str | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
 

@@ -24,6 +24,7 @@ def test_parse_search_page_extracts_normalized_listings():
     # fuel/transmission/body normalized to the mapper's canonical vocabulary, not raw Serbian text
     assert all(x.fuel_type in {"diesel", "petrol", "hybrid", "electric", "lpg", "cng", None} for x in listings)
     assert all(x.transmission in {"automatic", "manual", None} for x in listings)
+    assert first.image_url and first.image_url.startswith("https://cdn.polovniautomobili.com/")
 
 
 def test_parse_listing_extracts_full_detail():
@@ -43,6 +44,7 @@ def test_parse_listing_extracts_full_detail():
     # Full raw payload (safety/equipment/etc.) preserved for the snapshot history
     assert "safety" in listing.raw
     assert "equipment" in listing.raw
+    assert listing.image_url == "https://cdn.polovniautomobili.com/user-images/thumbs/3013/30136732/0d3bcb74b14a.jpg"
 
 
 def test_build_search_url_includes_filters():

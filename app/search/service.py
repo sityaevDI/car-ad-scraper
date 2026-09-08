@@ -162,6 +162,8 @@ class SearchService:
             func.max(Listing.mileage_km).label("mileage_max"),
         )
         stmt = _apply_filters(stmt, request.query).group_by(*group_columns)
+        if request.min_group_count is not None:
+            stmt = stmt.having(func.count(Listing.id) >= request.min_group_count)
 
         if request.sort == "price_asc":
             stmt = stmt.order_by(func.min(Listing.price).asc())
