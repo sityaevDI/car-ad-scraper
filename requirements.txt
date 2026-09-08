@@ -19,3 +19,4 @@ pytest
 pytest-asyncio
 aiosqlite
 greenlet
+redis>=5.0

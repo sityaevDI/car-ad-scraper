@@ -139,15 +139,20 @@ class SearchService:
         )
 
     async def _search_grouped(self, request: SearchRequest) -> SearchResponse:
-        unknown = set(request.group_by) - ALLOWED_GROUP_FIELDS.keys()
+        group_by = request.group_by
+        assert group_by, "search() only calls _search_grouped when group_by is truthy"
+
+        unknown = set(group_by) - ALLOWED_GROUP_FIELDS.keys()
         if unknown:
             raise HTTPException(status_code=400, detail=f"Invalid group_by fields: {sorted(unknown)}")
 
-        group_columns = [ALLOWED_GROUP_FIELDS[field] for field in request.group_by]
+        group_columns = [ALLOWED_GROUP_FIELDS[field] for field in group_by]
 
         stmt = select(
             *group_columns,
-            func.count(Listing.id).label("count"),
+            # Labeled "group_count", not "count" — Row already has a real `.count` (from tuple),
+            # so attribute access on a "count"-labeled column would shadow it.
+            func.count(Listing.id).label("group_count"),
             func.min(Listing.price).label("price_min"),
             func.avg(Listing.price).label("price_avg"),
             func.max(Listing.price).label("price_max"),
@@ -179,14 +184,14 @@ class SearchService:
         groups: list[ListingGroupOut] = []
         total_listings = 0
         for row in rows:
-            total_listings += row.count
+            total_listings += row.group_count
         for row in page_rows:
-            group = {field: getattr(row, field) for field in request.group_by}
+            group = {field: getattr(row, field) for field in group_by}
             groups.append(
                 ListingGroupOut(
                     group=group,
                     label=_build_label(group),
-                    count=row.count,
+                    count=row.group_count,
                     currency="EUR",
                     price_min=row.price_min,
                     price_avg=round(row.price_avg),
