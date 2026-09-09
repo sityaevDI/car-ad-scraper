@@ -108,10 +108,9 @@ class ListingRepository:
         """Mark active listings for a source that were not encountered in the latest crawl as
         removed. Never deletes rows — see docs/adr/17_AGENT_INSTRUCTIONS.md.
 
-        Only correct for a full-source crawl. Not called from `scraping/pipeline.py` yet, since
-        that pipeline runs one filtered SearchQuery at a time — calling this against a partial
-        result set would wrongly mark every listing outside that filter as removed. Wire it up
-        once a FULL_SOURCE_REFRESH job type is actually implemented.
+        Only correct for a full-source crawl — called from `run_scrape` (app/scraping/pipeline.py)
+        for FULL_SOURCE_REFRESH jobs only, since a filtered SearchQuery would make every listing
+        outside that filter look "missing" and get wrongly marked removed.
         """
         result = await self.session.execute(
             select(Listing).where(Listing.source_id == source_id, Listing.status == ListingStatus.ACTIVE)

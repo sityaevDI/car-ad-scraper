@@ -1,7 +1,5 @@
-"""Classifies a fetch attempt's result so the proxy stub (app/scraping/proxy.py) and per-job
-stats have something concrete to react to. Deliberately minimal — a full fetch-strategy
-abstraction (HttpFetcher/ProxyHttpFetcher/PlaywrightFetcher) is a separate, later piece of work
-(docs/adr/05_ANTI_BOT_PROXY.md), not built here.
+"""Classifies a fetch (or parse) attempt's result so app/scraping/fetch_strategy.py and per-job
+stats have something concrete to react to.
 """
 
 import enum
@@ -25,6 +23,10 @@ class FetchOutcome(str, enum.Enum):
     # Not in docs/adr/05_ANTI_BOT_PROXY.md's list, added for requests.ConnectionError/DNS
     # failures, which are neither a timeout nor a 5xx from the server.
     NETWORK_ERROR = "network_error"
+    # Not a fetch failure at all — the page was retrieved fine but couldn't be parsed (unexpected
+    # markup/JSON shape). Classified anyway so it shows up in per-job stats instead of crashing
+    # the job unclassified.
+    PARSER_ERROR = "parser_error"
 
 
 BLOCK_LIKE = frozenset(
@@ -38,6 +40,18 @@ class FetchBlockedError(Exception):
     def __init__(self, outcome: FetchOutcome):
         self.outcome = outcome
         super().__init__(f"Fetch blocked: {outcome.value}")
+
+
+class ParserError(Exception):
+    """Raised when a fetched page fails to parse. Mirrors FetchBlockedError so
+    app/scraping/pipeline.py can treat a malformed page the same way as a blocked one: stop this
+    run early, keep whatever was already upserted, and surface FetchOutcome.PARSER_ERROR in the
+    job's outcome stats rather than letting the job fail unclassified.
+    """
+
+    def __init__(self, detail: str):
+        self.detail = detail
+        super().__init__(f"Parser error: {detail}")
 
 
 def _body_outcome(text: str) -> FetchOutcome | None:
@@ -62,10 +76,16 @@ def classify_response(response: requests.Response) -> FetchOutcome:
     return FetchOutcome.FORBIDDEN
 
 
-def classify_exception(exc: Exception) -> FetchOutcome:
+def classify_exception(exc: Exception) -> tuple[FetchOutcome, str]:
+    """Returns the outcome alongside `f"{type}: {message}"` — a bare NETWORK_ERROR doesn't say
+    whether it was DNS failure, connection refused, connection reset, or a TLS error, and that
+    distinction matters when reading logs for a source that's silently dropping connections
+    instead of returning a proper 403/429.
+    """
+    detail = f"{type(exc).__name__}: {exc}"
     if isinstance(exc, requests.Timeout):
-        return FetchOutcome.TIMEOUT
-    return FetchOutcome.NETWORK_ERROR
+        return FetchOutcome.TIMEOUT, detail
+    return FetchOutcome.NETWORK_ERROR, detail
 
 
 class OutcomeCounter:

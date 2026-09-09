@@ -257,11 +257,56 @@ async def test_create_scheduled_scrape(client, email_sender, session_factory):
 
     assert response.status_code == 201
     body = response.json()
+    assert body["job_type"] == "search"
     assert body["interval_minutes"] == 60
     assert body["enabled"] is True
     assert body["query"]["search_query"]["make"] == "Skoda"
     assert body["next_run_at"] is not None
     assert body["last_run_at"] is None
+
+
+async def test_create_scheduled_scrape_accepts_full_source_refresh_with_empty_query(
+    client, email_sender, session_factory
+):
+    await _register_login_and_promote(client, email_sender, session_factory)
+
+    response = await client.post(
+        "/api/v1/scrape/schedules",
+        json={"source_code": "polovniautomobili", "job_type": "full_source_refresh", "interval_minutes": 60},
+        headers=_csrf_headers(client),
+    )
+
+    assert response.status_code == 201
+    assert response.json()["job_type"] == "full_source_refresh"
+
+
+async def test_create_scheduled_scrape_rejects_filtered_full_source_refresh(client, email_sender, session_factory):
+    await _register_login_and_promote(client, email_sender, session_factory)
+
+    response = await client.post(
+        "/api/v1/scrape/schedules",
+        json={
+            "source_code": "polovniautomobili",
+            "job_type": "full_source_refresh",
+            "query": {"make": "Skoda"},
+            "interval_minutes": 60,
+        },
+        headers=_csrf_headers(client),
+    )
+
+    assert response.status_code == 400
+
+
+async def test_create_scheduled_scrape_rejects_unimplemented_job_type(client, email_sender, session_factory):
+    await _register_login_and_promote(client, email_sender, session_factory)
+
+    response = await client.post(
+        "/api/v1/scrape/schedules",
+        json={"source_code": "polovniautomobili", "job_type": "listing_refresh", "interval_minutes": 60},
+        headers=_csrf_headers(client),
+    )
+
+    assert response.status_code == 400
 
 
 async def test_create_scheduled_scrape_rejects_interval_below_minimum(client, email_sender, session_factory):

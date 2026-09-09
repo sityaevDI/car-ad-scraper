@@ -35,11 +35,15 @@ def test_classify_response_captcha_page_disguised_as_403():
 
 
 def test_classify_exception_timeout():
-    assert classify_exception(requests.Timeout()) == FetchOutcome.TIMEOUT
+    outcome, detail = classify_exception(requests.Timeout("timed out"))
+    assert outcome == FetchOutcome.TIMEOUT
+    assert detail == "Timeout: timed out"
 
 
 def test_classify_exception_connection_error():
-    assert classify_exception(requests.ConnectionError()) == FetchOutcome.NETWORK_ERROR
+    outcome, detail = classify_exception(requests.ConnectionError("Connection reset by peer"))
+    assert outcome == FetchOutcome.NETWORK_ERROR
+    assert detail == "ConnectionError: Connection reset by peer"
 
 
 def test_outcome_counter_accumulates():
@@ -49,3 +53,10 @@ def test_outcome_counter_accumulates():
     counter.record(FetchOutcome.RATE_LIMITED)
 
     assert counter.as_dict() == {"success": 2, "rate_limited": 1}
+
+
+def test_outcome_counter_accumulates_parser_error():
+    counter = OutcomeCounter()
+    counter.record(FetchOutcome.PARSER_ERROR)
+
+    assert counter.as_dict() == {"parser_error": 1}

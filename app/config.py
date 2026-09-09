@@ -50,6 +50,17 @@ class Settings(BaseSettings):
     proxy_username: str | None = None
     proxy_password: str | None = None
 
+    # Scrape request pacing (docs/adr/05_ANTI_BOT_PROXY.md §8) — a courtesy to the source, not an
+    # anti-bot workaround. `ProxyHttpFetcher` spaces consecutive requests through one fetcher
+    # instance (i.e. within one scrape job) `scrape_request_delay_seconds` ± `_jitter_seconds`
+    # apart, and on a NETWORK_ERROR waits `scrape_network_error_retry_delay_seconds` to retry
+    # direct once (still no proxy) before falling back to the residential proxy — a connection
+    # reset right after a request that just worked is as likely a transient blip as an IP block,
+    # and the direct retry is free where a proxied one burns quota.
+    scrape_request_delay_seconds: float = 2.0
+    scrape_request_jitter_seconds: float = 1.0
+    scrape_network_error_retry_delay_seconds: float = 5.0
+
 
 @lru_cache
 def get_settings() -> Settings:

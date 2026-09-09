@@ -43,11 +43,20 @@ async def _seed_source(factory) -> object:
         return source.id
 
 
-async def _seed_schedule(factory, source_id, next_run_at, enabled=True, interval_minutes=60) -> object:
+async def _seed_schedule(
+    factory,
+    source_id,
+    next_run_at,
+    enabled=True,
+    interval_minutes=60,
+    job_type=ScrapeJobType.SEARCH,
+    query=None,
+) -> object:
     async with factory() as session:
         schedule = ScheduledScrape(
             source_id=source_id,
-            query={"search_query": {"make": "Skoda"}, "max_pages": 3},
+            job_type=job_type,
+            query=query if query is not None else {"search_query": {"make": "Skoda"}, "max_pages": 3},
             interval_minutes=interval_minutes,
             enabled=enabled,
             next_run_at=next_run_at,
@@ -69,6 +78,7 @@ async def test_creates_and_enqueues_job_for_due_schedule(session_factory):
         jobs = (await session.execute(ScrapeJob.__table__.select())).fetchall()
         assert len(jobs) == 1
         assert jobs[0].status == ScrapeJobStatus.PENDING
+        assert jobs[0].job_type == ScrapeJobType.SEARCH
         assert jobs[0].query == {"search_query": {"make": "Skoda"}, "max_pages": 3}
 
         schedule = await session.get(ScheduledScrape, schedule_id)
@@ -94,6 +104,22 @@ async def test_skips_schedule_not_yet_due(session_factory):
     async with session_factory() as session:
         jobs = (await session.execute(ScrapeJob.__table__.select())).fetchall()
         assert jobs == []
+
+
+async def test_creates_job_with_schedules_job_type(session_factory):
+    source_id = await _seed_source(session_factory)
+    past = datetime.now(timezone.utc) - timedelta(minutes=1)
+    await _seed_schedule(
+        session_factory, source_id, next_run_at=past, job_type=ScrapeJobType.FULL_SOURCE_REFRESH, query={}
+    )
+    redis = RecordingRedis()
+
+    await run_due_scheduled_scrapes({"session_factory": session_factory, "redis": redis})
+
+    async with session_factory() as session:
+        jobs = (await session.execute(ScrapeJob.__table__.select())).fetchall()
+        assert len(jobs) == 1
+        assert jobs[0].job_type == ScrapeJobType.FULL_SOURCE_REFRESH
 
 
 async def _seed_saved_search(factory, user_id=None, last_run_at=None, enabled=True, query=None) -> uuid.UUID:

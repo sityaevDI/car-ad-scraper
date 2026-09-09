@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { EmptyState, ErrorState, LoadingState } from '../components/StateMessage'
-import { ApiError, type ScrapeJobStatus, scrapeApi } from '../lib/api'
+import { ApiError, type ScrapeJobStatus, type ScrapeJobType, scrapeApi } from '../lib/api'
 
 const STATUS_OPTIONS: { value: ScrapeJobStatus | ''; label: string }[] = [
   { value: '', label: 'Все статусы' },
@@ -12,6 +12,27 @@ const STATUS_OPTIONS: { value: ScrapeJobStatus | ''; label: string }[] = [
   { value: 'failed', label: 'Ошибка' },
   { value: 'cancelled', label: 'Отменено' },
 ]
+
+// Only types the pipeline actually gives distinct behavior to are offered here — the rest
+// (listing_refresh, saved_search_refresh, market_refresh) are declared on the backend for later
+// phases but aren't wired into run_scrape yet, so scheduling them would silently behave like a
+// plain search.
+const SCHEDULABLE_JOB_TYPES: { value: ScrapeJobType; label: string; hint: string }[] = [
+  { value: 'search', label: 'Поиск по фильтру', hint: 'Обновляет объявления, попадающие под фильтр ниже.' },
+  {
+    value: 'full_source_refresh',
+    label: 'Полное обновление источника',
+    hint: 'Обходит источник целиком (без фильтра) и помечает пропавшие объявления как REMOVED.',
+  },
+]
+
+const JOB_TYPE_LABELS: Record<ScrapeJobType, string> = {
+  search: 'Поиск по фильтру',
+  full_source_refresh: 'Полное обновление источника',
+  listing_refresh: 'Обновление объявления',
+  saved_search_refresh: 'Обновление сохранённого поиска',
+  market_refresh: 'Обновление рынка',
+}
 
 const RETRYABLE = new Set<ScrapeJobStatus>(['failed', 'cancelled'])
 const CANCELLABLE = new Set<ScrapeJobStatus>(['pending', 'running'])
@@ -29,6 +50,7 @@ export function AdminJobsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [pendingActionId, setPendingActionId] = useState<string | null>(null)
 
+  const [scheduleJobType, setScheduleJobType] = useState<ScrapeJobType>('search')
   const [scheduleMake, setScheduleMake] = useState('')
   const [scheduleMaxPages, setScheduleMaxPages] = useState(5)
   const [intervalHours, setIntervalHours] = useState(6)
@@ -86,7 +108,14 @@ export function AdminJobsPage() {
     setScheduleFormError(null)
     setIsCreatingSchedule(true)
     try {
-      await scrapeApi.createSchedule('polovniautomobili', intervalHours * 60, scheduleMake || undefined, scheduleMaxPages)
+      const isFullSourceRefresh = scheduleJobType === 'full_source_refresh'
+      await scrapeApi.createSchedule(
+        'polovniautomobili',
+        intervalHours * 60,
+        isFullSourceRefresh ? undefined : scheduleMake || undefined,
+        scheduleMaxPages,
+        scheduleJobType,
+      )
       setScheduleMake('')
       await schedulesQuery.refetch()
     } catch (err) {
@@ -212,7 +241,7 @@ export function AdminJobsPage() {
               <tbody>
                 {jobsQuery.data.map((job) => (
                   <tr key={job.id} className="border-b border-slate-100 last:border-0">
-                    <td className="px-4 py-2 text-slate-700">{job.job_type}</td>
+                    <td className="px-4 py-2 text-slate-700">{JOB_TYPE_LABELS[job.job_type]}</td>
                     <td className="px-4 py-2 text-slate-700">{job.status}</td>
                     <td className="px-4 py-2 text-slate-500">{formatTimestamp(job.started_at)}</td>
                     <td className="px-4 py-2 text-slate-500">{formatTimestamp(job.finished_at)}</td>
@@ -259,6 +288,23 @@ export function AdminJobsPage() {
           {scheduleFormError && <p className="mb-3 text-sm text-red-600">{scheduleFormError}</p>}
           <div className="flex flex-wrap items-end gap-3">
             <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="schedule-job-type">
+                Тип задачи
+              </label>
+              <select
+                id="schedule-job-type"
+                value={scheduleJobType}
+                onChange={(e) => setScheduleJobType(e.target.value as ScrapeJobType)}
+                className="rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+              >
+                {SCHEDULABLE_JOB_TYPES.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
               <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="schedule-make">
                 Марка (опционально)
               </label>
@@ -267,7 +313,8 @@ export function AdminJobsPage() {
                 value={scheduleMake}
                 onChange={(e) => setScheduleMake(e.target.value)}
                 placeholder="Skoda"
-                className="rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+                disabled={scheduleJobType === 'full_source_refresh'}
+                className="rounded-md border border-slate-300 px-3 py-1.5 text-sm disabled:bg-slate-50 disabled:text-slate-400"
               />
             </div>
             <div>
@@ -306,6 +353,9 @@ export function AdminJobsPage() {
               {isCreatingSchedule ? 'Создаём…' : 'Добавить расписание'}
             </button>
           </div>
+          <p className="mt-2 text-xs text-slate-500">
+            {SCHEDULABLE_JOB_TYPES.find((opt) => opt.value === scheduleJobType)?.hint}
+          </p>
         </form>
 
         {schedulesQuery.isLoading && <LoadingState />}
@@ -321,6 +371,7 @@ export function AdminJobsPage() {
             <table className="w-full text-left text-sm">
               <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500">
                 <tr>
+                  <th className="px-4 py-2">Тип</th>
                   <th className="px-4 py-2">Интервал</th>
                   <th className="px-4 py-2">Статус</th>
                   <th className="px-4 py-2">Следующий запуск</th>
@@ -331,6 +382,7 @@ export function AdminJobsPage() {
               <tbody>
                 {schedulesQuery.data.map((schedule) => (
                   <tr key={schedule.id} className="border-b border-slate-100 last:border-0">
+                    <td className="px-4 py-2 text-slate-700">{JOB_TYPE_LABELS[schedule.job_type]}</td>
                     <td className="px-4 py-2 text-slate-700">каждые {schedule.interval_minutes / 60} ч</td>
                     <td className="px-4 py-2 text-slate-700">{schedule.enabled ? 'активно' : 'приостановлено'}</td>
                     <td className="px-4 py-2 text-slate-500">{formatTimestamp(schedule.next_run_at)}</td>
