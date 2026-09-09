@@ -74,4 +74,36 @@ export const scrapeApi = {
   cancelJob: (id: string) => apiFetch<ScrapeJobOut>(`/api/v1/scrape/jobs/${id}/cancel`, { method: 'POST' }),
 
   retryJob: (id: string) => apiFetch<ScrapeJobOut>(`/api/v1/scrape/jobs/${id}/retry`, { method: 'POST' }),
+
+  listSchedules: () => apiFetch<ScheduledScrapeOut[]>('/api/v1/scrape/schedules'),
+
+  createSchedule: (sourceCode: string, intervalMinutes: number, make?: string, maxPages = 5) =>
+    apiFetch<ScheduledScrapeOut>('/api/v1/scrape/schedules', {
+      method: 'POST',
+      body: JSON.stringify({
+        source_code: sourceCode,
+        query: make ? { make } : {},
+        max_pages: maxPages,
+        interval_minutes: intervalMinutes,
+      }),
+    }),
+
+  updateSchedule: (id: string, update: { enabled?: boolean; interval_minutes?: number }) =>
+    apiFetch<ScheduledScrapeOut>(`/api/v1/scrape/schedules/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(update),
+    }),
+
+  deleteSchedule: (id: string) => apiFetch<void>(`/api/v1/scrape/schedules/${id}`, { method: 'DELETE' }),
+}
+
+export interface ScheduledScrapeOut {
+  id: string
+  source_id: string
+  query: Record<string, unknown> | null
+  interval_minutes: number
+  enabled: boolean
+  next_run_at: string
+  last_run_at: string | null
+  last_job_id: string | null
 }

@@ -3,6 +3,7 @@
 from app.models.listing import Listing, ListingStatus
 from app.models.notification import Notification, NotificationType
 from app.models.saved_search import SavedSearch
+from app.models.scheduled_scrape import ScheduledScrape
 from app.models.scrape_job import ScrapeJob, ScrapeJobStatus, ScrapeJobType
 from app.models.snapshot import ListingSnapshot
 from app.models.source import Source
@@ -18,6 +19,7 @@ __all__ = [
     "ListingSnapshot",
     "User",
     "SavedSearch",
+    "ScheduledScrape",
     "ScrapeJob",
     "ScrapeJobStatus",
     "ScrapeJobType",

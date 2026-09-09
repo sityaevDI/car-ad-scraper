@@ -29,9 +29,21 @@ export function AdminJobsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [pendingActionId, setPendingActionId] = useState<string | null>(null)
 
+  const [scheduleMake, setScheduleMake] = useState('')
+  const [scheduleMaxPages, setScheduleMaxPages] = useState(5)
+  const [intervalHours, setIntervalHours] = useState(6)
+  const [scheduleFormError, setScheduleFormError] = useState<string | null>(null)
+  const [isCreatingSchedule, setIsCreatingSchedule] = useState(false)
+  const [pendingScheduleId, setPendingScheduleId] = useState<string | null>(null)
+
   const jobsQuery = useQuery({
     queryKey: ['admin', 'scrape-jobs', statusFilter],
     queryFn: () => scrapeApi.listJobs(statusFilter || undefined),
+  })
+
+  const schedulesQuery = useQuery({
+    queryKey: ['admin', 'scheduled-scrapes'],
+    queryFn: scrapeApi.listSchedules,
   })
 
   async function handleCreate(event: React.FormEvent) {
@@ -66,6 +78,41 @@ export function AdminJobsPage() {
       await jobsQuery.refetch()
     } finally {
       setPendingActionId(null)
+    }
+  }
+
+  async function handleCreateSchedule(event: React.FormEvent) {
+    event.preventDefault()
+    setScheduleFormError(null)
+    setIsCreatingSchedule(true)
+    try {
+      await scrapeApi.createSchedule('polovniautomobili', intervalHours * 60, scheduleMake || undefined, scheduleMaxPages)
+      setScheduleMake('')
+      await schedulesQuery.refetch()
+    } catch (err) {
+      setScheduleFormError(err instanceof ApiError ? err.message : 'Не удалось создать расписание')
+    } finally {
+      setIsCreatingSchedule(false)
+    }
+  }
+
+  async function handleToggleSchedule(id: string, enabled: boolean) {
+    setPendingScheduleId(id)
+    try {
+      await scrapeApi.updateSchedule(id, { enabled: !enabled })
+      await schedulesQuery.refetch()
+    } finally {
+      setPendingScheduleId(null)
+    }
+  }
+
+  async function handleDeleteSchedule(id: string) {
+    setPendingScheduleId(id)
+    try {
+      await scrapeApi.deleteSchedule(id)
+      await schedulesQuery.refetch()
+    } finally {
+      setPendingScheduleId(null)
     }
   }
 
@@ -193,6 +240,118 @@ export function AdminJobsPage() {
                           Повторить
                         </button>
                       )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div>
+        <h2 className="mb-1 text-sm font-medium text-slate-900">Расписания</h2>
+        <p className="mb-3 text-sm text-slate-600">
+          Регулярный запуск задачи с заданным интервалом — держит данные актуальными без ручных запусков.
+        </p>
+
+        <form onSubmit={handleCreateSchedule} className="mb-4 rounded-lg border border-slate-200 bg-white p-4">
+          {scheduleFormError && <p className="mb-3 text-sm text-red-600">{scheduleFormError}</p>}
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="schedule-make">
+                Марка (опционально)
+              </label>
+              <input
+                id="schedule-make"
+                value={scheduleMake}
+                onChange={(e) => setScheduleMake(e.target.value)}
+                placeholder="Skoda"
+                className="rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="schedule-max-pages">
+                Макс. страниц
+              </label>
+              <input
+                id="schedule-max-pages"
+                type="number"
+                min={1}
+                max={50}
+                value={scheduleMaxPages}
+                onChange={(e) => setScheduleMaxPages(Number(e.target.value))}
+                className="w-24 rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="schedule-interval">
+                Интервал, часы
+              </label>
+              <input
+                id="schedule-interval"
+                type="number"
+                min={1}
+                max={168}
+                value={intervalHours}
+                onChange={(e) => setIntervalHours(Number(e.target.value))}
+                className="w-24 rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={isCreatingSchedule}
+              className="rounded-md bg-slate-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+            >
+              {isCreatingSchedule ? 'Создаём…' : 'Добавить расписание'}
+            </button>
+          </div>
+        </form>
+
+        {schedulesQuery.isLoading && <LoadingState />}
+        {schedulesQuery.isError && (
+          <ErrorState message="Не удалось загрузить расписания" onRetry={() => schedulesQuery.refetch()} />
+        )}
+        {schedulesQuery.isSuccess && schedulesQuery.data.length === 0 && (
+          <EmptyState message="Расписаний пока нет" />
+        )}
+
+        {schedulesQuery.isSuccess && schedulesQuery.data.length > 0 && (
+          <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500">
+                <tr>
+                  <th className="px-4 py-2">Интервал</th>
+                  <th className="px-4 py-2">Статус</th>
+                  <th className="px-4 py-2">Следующий запуск</th>
+                  <th className="px-4 py-2">Последний запуск</th>
+                  <th className="px-4 py-2" />
+                </tr>
+              </thead>
+              <tbody>
+                {schedulesQuery.data.map((schedule) => (
+                  <tr key={schedule.id} className="border-b border-slate-100 last:border-0">
+                    <td className="px-4 py-2 text-slate-700">каждые {schedule.interval_minutes / 60} ч</td>
+                    <td className="px-4 py-2 text-slate-700">{schedule.enabled ? 'активно' : 'приостановлено'}</td>
+                    <td className="px-4 py-2 text-slate-500">{formatTimestamp(schedule.next_run_at)}</td>
+                    <td className="px-4 py-2 text-slate-500">{formatTimestamp(schedule.last_run_at)}</td>
+                    <td className="px-4 py-2 text-right">
+                      <button
+                        type="button"
+                        disabled={pendingScheduleId === schedule.id}
+                        onClick={() => handleToggleSchedule(schedule.id, schedule.enabled)}
+                        className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                      >
+                        {schedule.enabled ? 'Приостановить' : 'Возобновить'}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={pendingScheduleId === schedule.id}
+                        onClick={() => handleDeleteSchedule(schedule.id)}
+                        className="ml-2 rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                      >
+                        Удалить
+                      </button>
                     </td>
                   </tr>
                 ))}
