@@ -77,11 +77,18 @@ export const scrapeApi = {
 
   listSchedules: () => apiFetch<ScheduledScrapeOut[]>('/api/v1/scrape/schedules'),
 
-  createSchedule: (sourceCode: string, intervalMinutes: number, make?: string, maxPages = 5) =>
+  createSchedule: (
+    sourceCode: string,
+    intervalMinutes: number,
+    make?: string,
+    maxPages = 5,
+    jobType: ScrapeJobType = 'search',
+  ) =>
     apiFetch<ScheduledScrapeOut>('/api/v1/scrape/schedules', {
       method: 'POST',
       body: JSON.stringify({
         source_code: sourceCode,
+        job_type: jobType,
         query: make ? { make } : {},
         max_pages: maxPages,
         interval_minutes: intervalMinutes,
@@ -100,6 +107,7 @@ export const scrapeApi = {
 export interface ScheduledScrapeOut {
   id: string
   source_id: string
+  job_type: ScrapeJobType
   query: Record<string, unknown> | null
   interval_minutes: number
   enabled: boolean

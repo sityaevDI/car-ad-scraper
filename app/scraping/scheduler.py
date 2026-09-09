@@ -9,7 +9,7 @@ from typing import Any
 from sqlalchemy import select
 
 from app.models.scheduled_scrape import ScheduledScrape
-from app.models.scrape_job import ScrapeJob, ScrapeJobStatus, ScrapeJobType
+from app.models.scrape_job import ScrapeJob, ScrapeJobStatus
 
 
 async def run_due_scheduled_scrapes(ctx: dict[str, Any]) -> None:
@@ -23,7 +23,7 @@ async def run_due_scheduled_scrapes(ctx: dict[str, Any]) -> None:
         for scheduled in due:
             job = ScrapeJob(
                 source_id=scheduled.source_id,
-                job_type=ScrapeJobType.SEARCH,
+                job_type=scheduled.job_type,
                 status=ScrapeJobStatus.PENDING,
                 query=scheduled.query,
             )

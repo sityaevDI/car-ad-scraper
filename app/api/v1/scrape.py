@@ -168,6 +168,9 @@ async def list_scheduled_scrapes(
     return [ScheduledScrapeOut.model_validate(s) for s in schedules]
 
 
+_SCHEDULABLE_JOB_TYPES = {ScrapeJobType.SEARCH, ScrapeJobType.FULL_SOURCE_REFRESH}
+
+
 @router.post("/schedules", response_model=ScheduledScrapeOut, status_code=201)
 async def create_scheduled_scrape(
     payload: ScheduledScrapeCreate,
@@ -179,6 +182,16 @@ async def create_scheduled_scrape(
     if adapter_cls is None:
         raise HTTPException(status_code=400, detail=f"Unknown source_code: {payload.source_code!r}")
 
+    if payload.job_type not in _SCHEDULABLE_JOB_TYPES:
+        raise HTTPException(status_code=400, detail=f"Unsupported job_type for a schedule: {payload.job_type.value!r}")
+
+    if payload.job_type == ScrapeJobType.FULL_SOURCE_REFRESH and payload.query.model_dump(exclude_none=True):
+        # mark_missing_as_removed (app/listings/repository.py) treats "not seen this crawl" as
+        # "removed from the source" — safe only when the crawl actually covers the whole source.
+        raise HTTPException(
+            status_code=400, detail="full_source_refresh schedules must not filter the search query"
+        )
+
     source = await get_or_create_source(
         session,
         code=adapter_cls.source_code,
@@ -188,6 +201,7 @@ async def create_scheduled_scrape(
     )
     schedule = ScheduledScrape(
         source_id=source.id,
+        job_type=payload.job_type,
         query=encode_job_query(payload.query, payload.max_pages),
         interval_minutes=payload.interval_minutes,
         next_run_at=payload.start_at or datetime.now(timezone.utc),
