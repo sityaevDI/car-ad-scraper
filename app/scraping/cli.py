@@ -8,8 +8,8 @@ import argparse
 import asyncio
 
 from app.db.session import get_session
+from app.scraping.pipeline import run_scrape
 from app.search.query import SearchQuery
-from app.scraping.pipeline import run_polovniautomobili_scrape
 
 
 async def _main(args: argparse.Namespace) -> None:
@@ -21,7 +21,7 @@ async def _main(args: argparse.Namespace) -> None:
         price_max=args.price_max,
     )
     async for session in get_session():
-        stats = await run_polovniautomobili_scrape(session, query, max_pages=args.max_pages)
+        stats = await run_scrape(session, source_code="polovniautomobili", query=query, max_pages=args.max_pages)
         print(stats)
 
 

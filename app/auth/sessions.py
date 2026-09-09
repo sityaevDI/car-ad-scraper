@@ -1,3 +1,4 @@
+from collections.abc import Awaitable
 from typing import cast
 
 from redis.asyncio import Redis
@@ -55,7 +56,9 @@ class SessionStore:
 
     async def revoke_all_for_user(self, user_id: str) -> None:
         user_sessions_key = self._user_sessions_key(user_id)
-        session_ids = await self._redis.smembers(user_sessions_key)
+        # redis-py's stub types smembers() as `Awaitable[set[str]] | set[str]` (shared with the
+        # sync client); outside a pipeline it's always the coroutine form.
+        session_ids = await cast("Awaitable[set[str]]", self._redis.smembers(user_sessions_key))
         if session_ids:
             await self._redis.delete(*(self._session_key(cast(str, sid)) for sid in session_ids))
         await self._redis.delete(user_sessions_key)

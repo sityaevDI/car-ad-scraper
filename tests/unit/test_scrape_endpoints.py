@@ -1,0 +1,155 @@
+"""Endpoint-level tests for the scrape job API, following tests/unit/test_auth_endpoints.py's
+pattern: real FastAPI app over ASGI, dependency overrides instead of a real Postgres/Redis/arq.
+"""
+
+import pytest
+import pytest_asyncio
+from fakeredis import FakeAsyncRedis
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
+
+from app.auth.email import get_email_sender
+from app.config import get_settings
+from app.db.base import Base
+from app.db.session import get_session
+from app.infrastructure.redis import get_redis
+from app.main import app
+from app.models.scrape_job import ScrapeJobStatus
+from app.scraping.queue import get_job_enqueuer
+
+
+class RecordingEmailSender:
+    def __init__(self):
+        self.sent = []
+
+    async def send(self, to: str, subject: str, body: str) -> None:
+        self.sent.append({"to": to, "subject": subject, "body": body})
+
+    def last_token(self) -> str:
+        return self.sent[-1]["body"].rsplit("token=", 1)[-1]
+
+
+class RecordingEnqueuer:
+    def __init__(self):
+        self.enqueued: list[str] = []
+
+    async def __call__(self, job_id: str) -> None:
+        self.enqueued.append(job_id)
+
+
+@pytest.fixture
+def email_sender():
+    return RecordingEmailSender()
+
+
+@pytest.fixture
+def enqueuer():
+    return RecordingEnqueuer()
+
+
+@pytest_asyncio.fixture
+async def client(email_sender, enqueuer):
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:", poolclass=StaticPool, connect_args={"check_same_thread": False}
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def override_get_session():
+        async with session_factory() as session:
+            yield session
+
+    fake_redis = FakeAsyncRedis(decode_responses=True)
+
+    app.dependency_overrides[get_session] = override_get_session
+    app.dependency_overrides[get_redis] = lambda: fake_redis
+    app.dependency_overrides[get_email_sender] = lambda: email_sender
+    app.dependency_overrides[get_job_enqueuer] = lambda: enqueuer
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as async_client:
+        yield async_client
+
+    app.dependency_overrides.clear()
+    await fake_redis.aclose()
+    await engine.dispose()
+
+
+def _csrf_headers(client: AsyncClient) -> dict[str, str]:
+    settings = get_settings()
+    return {settings.csrf_header_name: client.cookies[settings.csrf_cookie_name]}
+
+
+async def _register_and_login(client: AsyncClient, email_sender: RecordingEmailSender) -> None:
+    await client.post("/api/v1/auth/register", json={"email": "scraper@example.com", "password": "hunter2pass"})
+    token = email_sender.last_token()
+    await client.post("/api/v1/auth/verify-email", json={"token": token})
+    await client.post("/api/v1/auth/login", json={"email": "scraper@example.com", "password": "hunter2pass"})
+
+
+async def test_create_scrape_job_creates_row_and_enqueues(client, email_sender, enqueuer):
+    await _register_and_login(client, email_sender)
+
+    response = await client.post(
+        "/api/v1/scrape/jobs",
+        json={"source_code": "polovniautomobili", "query": {"make": "Skoda"}, "max_pages": 1},
+        headers=_csrf_headers(client),
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["status"] == ScrapeJobStatus.PENDING.value
+    assert body["query"]["search_query"]["make"] == "Skoda"
+    assert body["query"]["max_pages"] == 1
+    assert enqueuer.enqueued == [body["id"]]
+
+
+async def test_create_scrape_job_rejects_unknown_source(client, email_sender):
+    await _register_and_login(client, email_sender)
+
+    response = await client.post(
+        "/api/v1/scrape/jobs",
+        json={"source_code": "not_a_real_source"},
+        headers=_csrf_headers(client),
+    )
+
+    assert response.status_code == 400
+
+
+async def test_create_scrape_job_requires_auth(client):
+    response = await client.post("/api/v1/scrape/jobs", json={"source_code": "polovniautomobili"})
+    assert response.status_code == 401
+
+
+async def test_get_scrape_job_returns_created_job(client, email_sender):
+    await _register_and_login(client, email_sender)
+    create_response = await client.post(
+        "/api/v1/scrape/jobs", json={"source_code": "polovniautomobili"}, headers=_csrf_headers(client)
+    )
+    job_id = create_response.json()["id"]
+
+    response = await client.get(f"/api/v1/scrape/jobs/{job_id}")
+
+    assert response.status_code == 200
+    assert response.json()["id"] == job_id
+
+
+async def test_get_scrape_job_404_for_unknown_id(client, email_sender):
+    await _register_and_login(client, email_sender)
+    response = await client.get("/api/v1/scrape/jobs/00000000-0000-0000-0000-000000000000")
+    assert response.status_code == 404
+
+
+async def test_cancel_scrape_job_flips_status(client, email_sender):
+    await _register_and_login(client, email_sender)
+    create_response = await client.post(
+        "/api/v1/scrape/jobs", json={"source_code": "polovniautomobili"}, headers=_csrf_headers(client)
+    )
+    job_id = create_response.json()["id"]
+
+    response = await client.post(f"/api/v1/scrape/jobs/{job_id}/cancel", headers=_csrf_headers(client))
+
+    assert response.status_code == 200
+    assert response.json()["status"] == ScrapeJobStatus.CANCELLED.value

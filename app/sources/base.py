@@ -49,8 +49,15 @@ class SourceListing:
 
 class CarSource(Protocol):
     source_code: str
+    display_name: str
+    domain: str
+    country: str
 
-    async def search(self, query: SearchQuery) -> AsyncIterator[SourceListingRef]: ...
+    # Not `async def`: an async-generator method's Protocol stub must be a plain `def` returning
+    # AsyncIterator (like `__aiter__`) — `async def ...: ...` with no `yield` in the stub body
+    # makes mypy treat calling it as awaitable-returning-an-iterator instead of an async generator,
+    # which breaks any caller typed against CarSource (not just the concrete adapter).
+    def search(self, query: SearchQuery) -> AsyncIterator[SourceListingRef]: ...
 
     async def fetch_listing(self, ref: SourceListingRef) -> SourceListing: ...
 
