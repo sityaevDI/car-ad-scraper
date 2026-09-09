@@ -109,6 +109,40 @@ async def test_proxy_http_fetcher_reports_failure_when_both_blocked(monkeypatch)
     assert len(proxy_provider.failures) == 1
 
 
+async def test_proxy_http_fetcher_retries_via_proxy_on_network_error(monkeypatch):
+    proxy_provider = FakeProxyProvider()
+    fetcher = ProxyHttpFetcher(source="polovniautomobili", proxy_provider=proxy_provider)
+
+    def fake_get(url, timeout, headers, proxies=None):
+        if proxies is None:
+            raise requests.ConnectionError("Connection reset by peer")
+        return _response(200, "via proxy")
+
+    monkeypatch.setattr(fetcher.session, "get", fake_get)
+
+    result = await fetcher.fetch("https://example.com")
+
+    assert result.outcome == FetchOutcome.SUCCESS
+    assert result.text == "via proxy"
+    assert len(proxy_provider.successes) == 1
+    assert proxy_provider.failures == []
+
+
+async def test_proxy_http_fetcher_reports_failure_when_network_error_persists_through_proxy(monkeypatch):
+    proxy_provider = FakeProxyProvider()
+    fetcher = ProxyHttpFetcher(source="polovniautomobili", proxy_provider=proxy_provider)
+    monkeypatch.setattr(
+        fetcher.session, "get", lambda *a, **kw: (_ for _ in ()).throw(requests.ConnectionError("still down"))
+    )
+
+    result = await fetcher.fetch("https://example.com")
+
+    assert result.outcome == FetchOutcome.NETWORK_ERROR
+    assert result.detail == "ConnectionError: still down"
+    assert proxy_provider.successes == []
+    assert len(proxy_provider.failures) == 1
+
+
 async def test_proxy_http_fetcher_does_not_try_proxy_on_server_error(monkeypatch):
     proxy_provider = FakeProxyProvider()
     fetcher = ProxyHttpFetcher(source="polovniautomobili", proxy_provider=proxy_provider)
