@@ -9,6 +9,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+from arq import cron
 from arq.connections import RedisSettings
 
 from app.config import get_settings
@@ -17,6 +18,7 @@ from app.models.scrape_job import ScrapeJob, ScrapeJobStatus
 from app.models.source import Source
 from app.scraping.pipeline import run_scrape
 from app.scraping.proxy import get_proxy_provider
+from app.scraping.scheduler import run_due_scheduled_scrapes
 from app.scraping.schemas import decode_job_query
 
 
@@ -70,5 +72,6 @@ async def run_scrape_job(ctx: dict[str, Any], job_id: str) -> None:
 
 class WorkerSettings:
     functions = [run_scrape_job]
+    cron_jobs = [cron(run_due_scheduled_scrapes, second=0)]
     on_startup = _on_startup
     redis_settings = RedisSettings.from_dsn(get_settings().redis_url)

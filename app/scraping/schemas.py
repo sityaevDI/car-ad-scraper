@@ -6,14 +6,13 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.models.scrape_job import ScrapeJobStatus, ScrapeJobType
 from app.search.query import SearchQuery
 
+_DEFAULT_MAX_PAGES = 5
+
 
 class ScrapeJobCreate(BaseModel):
     source_code: str
     query: SearchQuery = Field(default_factory=SearchQuery)
     max_pages: int = 5
-
-
-_DEFAULT_MAX_PAGES = 5
 
 
 def encode_job_query(query: SearchQuery, max_pages: int) -> dict:
@@ -43,3 +42,29 @@ class ScrapeJobOut(BaseModel):
     finished_at: datetime | None
     stats: dict | None
     error: dict | None
+
+
+class ScheduledScrapeCreate(BaseModel):
+    source_code: str
+    query: SearchQuery = Field(default_factory=SearchQuery)
+    max_pages: int = 5
+    interval_minutes: int = Field(ge=5)
+    start_at: datetime | None = None
+
+
+class ScheduledScrapeUpdate(BaseModel):
+    interval_minutes: int | None = Field(default=None, ge=5)
+    enabled: bool | None = None
+
+
+class ScheduledScrapeOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    source_id: uuid.UUID
+    query: dict | None
+    interval_minutes: int
+    enabled: bool
+    next_run_at: datetime
+    last_run_at: datetime | None
+    last_job_id: uuid.UUID | None

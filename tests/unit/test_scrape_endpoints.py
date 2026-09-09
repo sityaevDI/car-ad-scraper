@@ -244,3 +244,90 @@ async def test_list_scrape_jobs_requires_admin(client, email_sender):
     await _register_and_login(client, email_sender)
     response = await client.get("/api/v1/scrape/jobs")
     assert response.status_code == 403
+
+
+async def test_create_scheduled_scrape(client, email_sender, session_factory):
+    await _register_login_and_promote(client, email_sender, session_factory)
+
+    response = await client.post(
+        "/api/v1/scrape/schedules",
+        json={"source_code": "polovniautomobili", "query": {"make": "Skoda"}, "max_pages": 2, "interval_minutes": 60},
+        headers=_csrf_headers(client),
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["interval_minutes"] == 60
+    assert body["enabled"] is True
+    assert body["query"]["search_query"]["make"] == "Skoda"
+    assert body["next_run_at"] is not None
+    assert body["last_run_at"] is None
+
+
+async def test_create_scheduled_scrape_rejects_interval_below_minimum(client, email_sender, session_factory):
+    await _register_login_and_promote(client, email_sender, session_factory)
+
+    response = await client.post(
+        "/api/v1/scrape/schedules",
+        json={"source_code": "polovniautomobili", "interval_minutes": 1},
+        headers=_csrf_headers(client),
+    )
+
+    assert response.status_code == 422
+
+
+async def test_list_scheduled_scrapes(client, email_sender, session_factory):
+    await _register_login_and_promote(client, email_sender, session_factory)
+    await client.post(
+        "/api/v1/scrape/schedules",
+        json={"source_code": "polovniautomobili", "interval_minutes": 60},
+        headers=_csrf_headers(client),
+    )
+
+    response = await client.get("/api/v1/scrape/schedules")
+
+    assert response.status_code == 200
+    assert len(response.json()) == 1
+
+
+async def test_update_scheduled_scrape_toggles_enabled_and_interval(client, email_sender, session_factory):
+    await _register_login_and_promote(client, email_sender, session_factory)
+    create_response = await client.post(
+        "/api/v1/scrape/schedules",
+        json={"source_code": "polovniautomobili", "interval_minutes": 60},
+        headers=_csrf_headers(client),
+    )
+    schedule_id = create_response.json()["id"]
+
+    response = await client.patch(
+        f"/api/v1/scrape/schedules/{schedule_id}",
+        json={"enabled": False, "interval_minutes": 120},
+        headers=_csrf_headers(client),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["enabled"] is False
+    assert body["interval_minutes"] == 120
+
+
+async def test_delete_scheduled_scrape(client, email_sender, session_factory):
+    await _register_login_and_promote(client, email_sender, session_factory)
+    create_response = await client.post(
+        "/api/v1/scrape/schedules",
+        json={"source_code": "polovniautomobili", "interval_minutes": 60},
+        headers=_csrf_headers(client),
+    )
+    schedule_id = create_response.json()["id"]
+
+    response = await client.delete(f"/api/v1/scrape/schedules/{schedule_id}", headers=_csrf_headers(client))
+    assert response.status_code == 204
+
+    list_response = await client.get("/api/v1/scrape/schedules")
+    assert list_response.json() == []
+
+
+async def test_scheduled_scrapes_require_admin(client, email_sender):
+    await _register_and_login(client, email_sender)
+    response = await client.get("/api/v1/scrape/schedules")
+    assert response.status_code == 403
