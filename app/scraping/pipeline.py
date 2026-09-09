@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.listings.repository import ListingRepository
 from app.models.source import Source
-from app.scraping.fetch_outcome import FetchBlockedError, OutcomeCounter
+from app.scraping.fetch_outcome import FetchBlockedError, OutcomeCounter, ParserError
 from app.scraping.proxy import ProxyProvider
 from app.search.query import SearchQuery
 from app.sources.base import CarSource, SourceListing
@@ -65,8 +65,8 @@ async def run_scrape(
     ListingRepository.mark_missing_as_removed) — only safe when `query` covers the whole source,
     since anything filtered out would otherwise look "missing" and get marked removed too. Callers
     only pass it for FULL_SOURCE_REFRESH jobs (see app/scraping/worker.py), and it's skipped here
-    whenever the crawl was cut short by FetchBlockedError, since a partial crawl can't tell a
-    genuinely removed listing from one it just didn't get to yet.
+    whenever the crawl was cut short by FetchBlockedError/ParserError, since a partial crawl can't
+    tell a genuinely removed listing from one it just didn't get to yet.
     """
     counter = OutcomeCounter()
     adapter = get_source_adapter(
@@ -87,10 +87,11 @@ async def run_scrape(
                 stats.listings_created += 1
             else:
                 stats.listings_updated += 1
-    except FetchBlockedError:
+    except (FetchBlockedError, ParserError):
         # Stop pagination early but keep whatever was already upserted this run — a partial
-        # result is more useful than losing it, and burning further proxy/direct requests against
-        # a source that just told us to back off would be wasteful.
+        # result is more useful than losing it. FetchBlockedError means the source just told us
+        # to back off (burning further proxy/direct requests would be wasteful); ParserError means
+        # one page came back in an unexpected shape, which a retry of the same page won't fix.
         stats.blocked = True
 
     if mark_removed and not stats.blocked and stats.listings_seen > 0:

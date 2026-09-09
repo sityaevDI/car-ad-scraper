@@ -49,3 +49,10 @@ def test_outcome_counter_accumulates():
     counter.record(FetchOutcome.RATE_LIMITED)
 
     assert counter.as_dict() == {"success": 2, "rate_limited": 1}
+
+
+def test_outcome_counter_accumulates_parser_error():
+    counter = OutcomeCounter()
+    counter.record(FetchOutcome.PARSER_ERROR)
+
+    assert counter.as_dict() == {"parser_error": 1}
