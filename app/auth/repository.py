@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.user import User
+from app.models.user import User, UserRole
 
 
 class UserRepository:
@@ -34,4 +34,8 @@ class UserRepository:
 
     async def update_last_login(self, user: User) -> None:
         user.last_login_at = datetime.now(timezone.utc)
+        await self.session.flush()
+
+    async def set_role(self, user: User, role: UserRole) -> None:
+        user.role = role
         await self.session.flush()

@@ -4,7 +4,7 @@ from datetime import datetime
 from disposable_email_domains import blocklist
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
-from app.models.user import User
+from app.models.user import User, UserRole
 
 
 def _reject_disposable_domain(email: EmailStr) -> EmailStr:
@@ -43,6 +43,7 @@ class UserOut(BaseModel):
     id: uuid.UUID
     email: str
     email_verified: bool
+    role: UserRole
     created_at: datetime
     last_login_at: datetime | None
 
@@ -52,6 +53,7 @@ class UserOut(BaseModel):
             id=user.id,
             email=user.email,
             email_verified=user.email_verified_at is not None,
+            role=user.role,
             created_at=user.created_at,
             last_login_at=user.last_login_at,
         )

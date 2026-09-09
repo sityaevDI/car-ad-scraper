@@ -2,10 +2,13 @@ import { apiFetch } from './client'
 
 export { ApiError } from './client'
 
+export type UserRole = 'user' | 'admin'
+
 export interface UserOut {
   id: string
   email: string
   email_verified: boolean
+  role: UserRole
   created_at: string
   last_login_at: string | null
 }
@@ -36,4 +39,39 @@ export const authApi = {
     }),
 
   me: () => apiFetch<UserOut>('/api/v1/me'),
+}
+
+export type ScrapeJobStatus = 'pending' | 'running' | 'completed' | 'partial' | 'failed' | 'cancelled'
+export type ScrapeJobType =
+  | 'search'
+  | 'listing_refresh'
+  | 'saved_search_refresh'
+  | 'full_source_refresh'
+  | 'market_refresh'
+
+export interface ScrapeJobOut {
+  id: string
+  source_id: string
+  job_type: ScrapeJobType
+  status: ScrapeJobStatus
+  query: Record<string, unknown> | null
+  started_at: string | null
+  finished_at: string | null
+  stats: Record<string, unknown> | null
+  error: Record<string, unknown> | null
+}
+
+export const scrapeApi = {
+  listJobs: (status?: ScrapeJobStatus) =>
+    apiFetch<ScrapeJobOut[]>(`/api/v1/scrape/jobs${status ? `?status=${status}` : ''}`),
+
+  createJob: (sourceCode: string, make?: string, maxPages = 5) =>
+    apiFetch<ScrapeJobOut>('/api/v1/scrape/jobs', {
+      method: 'POST',
+      body: JSON.stringify({ source_code: sourceCode, query: make ? { make } : {}, max_pages: maxPages }),
+    }),
+
+  cancelJob: (id: string) => apiFetch<ScrapeJobOut>(`/api/v1/scrape/jobs/${id}/cancel`, { method: 'POST' }),
+
+  retryJob: (id: string) => apiFetch<ScrapeJobOut>(`/api/v1/scrape/jobs/${id}/retry`, { method: 'POST' }),
 }

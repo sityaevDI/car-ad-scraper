@@ -10,12 +10,14 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from app.auth.email import get_email_sender
+from app.auth.repository import UserRepository
 from app.config import get_settings
 from app.db.base import Base
 from app.db.session import get_session
 from app.infrastructure.redis import get_redis
 from app.main import app
 from app.models.scrape_job import ScrapeJobStatus
+from app.models.user import UserRole
 from app.scraping.queue import get_job_enqueuer
 
 
@@ -49,14 +51,19 @@ def enqueuer():
 
 
 @pytest_asyncio.fixture
-async def client(email_sender, enqueuer):
+async def session_factory():
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:", poolclass=StaticPool, connect_args={"check_same_thread": False}
     )
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    yield factory
+    await engine.dispose()
 
+
+@pytest_asyncio.fixture
+async def client(session_factory, email_sender, enqueuer):
     async def override_get_session():
         async with session_factory() as session:
             yield session
@@ -74,7 +81,6 @@ async def client(email_sender, enqueuer):
 
     app.dependency_overrides.clear()
     await fake_redis.aclose()
-    await engine.dispose()
 
 
 def _csrf_headers(client: AsyncClient) -> dict[str, str]:
@@ -82,15 +88,39 @@ def _csrf_headers(client: AsyncClient) -> dict[str, str]:
     return {settings.csrf_header_name: client.cookies[settings.csrf_cookie_name]}
 
 
-async def _register_and_login(client: AsyncClient, email_sender: RecordingEmailSender) -> None:
-    await client.post("/api/v1/auth/register", json={"email": "scraper@example.com", "password": "hunter2pass"})
+async def _register_and_login(
+    client: AsyncClient,
+    email_sender: RecordingEmailSender,
+    email: str = "scraper@example.com",
+) -> None:
+    await client.post("/api/v1/auth/register", json={"email": email, "password": "hunter2pass"})
     token = email_sender.last_token()
     await client.post("/api/v1/auth/verify-email", json={"token": token})
-    await client.post("/api/v1/auth/login", json={"email": "scraper@example.com", "password": "hunter2pass"})
+    await client.post("/api/v1/auth/login", json={"email": email, "password": "hunter2pass"})
 
 
-async def test_create_scrape_job_creates_row_and_enqueues(client, email_sender, enqueuer):
-    await _register_and_login(client, email_sender)
+async def _promote_to_admin(session_factory, email: str = "scraper@example.com") -> None:
+    async with session_factory() as session:
+        repo = UserRepository(session)
+        user = await repo.get_by_email(email)
+        await repo.set_role(user, UserRole.ADMIN)
+        await session.commit()
+
+
+async def _register_login_and_promote(
+    client: AsyncClient,
+    email_sender: RecordingEmailSender,
+    session_factory,
+    email: str = "scraper@example.com",
+) -> None:
+    await _register_and_login(client, email_sender, email)
+    # get_current_user re-fetches the user row on every request, so the promotion above takes
+    # effect immediately without a re-login.
+    await _promote_to_admin(session_factory, email)
+
+
+async def test_create_scrape_job_creates_row_and_enqueues(client, email_sender, session_factory, enqueuer):
+    await _register_login_and_promote(client, email_sender, session_factory)
 
     response = await client.post(
         "/api/v1/scrape/jobs",
@@ -106,8 +136,8 @@ async def test_create_scrape_job_creates_row_and_enqueues(client, email_sender, 
     assert enqueuer.enqueued == [body["id"]]
 
 
-async def test_create_scrape_job_rejects_unknown_source(client, email_sender):
-    await _register_and_login(client, email_sender)
+async def test_create_scrape_job_rejects_unknown_source(client, email_sender, session_factory):
+    await _register_login_and_promote(client, email_sender, session_factory)
 
     response = await client.post(
         "/api/v1/scrape/jobs",
@@ -123,8 +153,18 @@ async def test_create_scrape_job_requires_auth(client):
     assert response.status_code == 401
 
 
-async def test_get_scrape_job_returns_created_job(client, email_sender):
+async def test_create_scrape_job_requires_admin(client, email_sender):
     await _register_and_login(client, email_sender)
+
+    response = await client.post(
+        "/api/v1/scrape/jobs", json={"source_code": "polovniautomobili"}, headers=_csrf_headers(client)
+    )
+
+    assert response.status_code == 403
+
+
+async def test_get_scrape_job_returns_created_job(client, email_sender, session_factory):
+    await _register_login_and_promote(client, email_sender, session_factory)
     create_response = await client.post(
         "/api/v1/scrape/jobs", json={"source_code": "polovniautomobili"}, headers=_csrf_headers(client)
     )
@@ -136,14 +176,14 @@ async def test_get_scrape_job_returns_created_job(client, email_sender):
     assert response.json()["id"] == job_id
 
 
-async def test_get_scrape_job_404_for_unknown_id(client, email_sender):
-    await _register_and_login(client, email_sender)
+async def test_get_scrape_job_404_for_unknown_id(client, email_sender, session_factory):
+    await _register_login_and_promote(client, email_sender, session_factory)
     response = await client.get("/api/v1/scrape/jobs/00000000-0000-0000-0000-000000000000")
     assert response.status_code == 404
 
 
-async def test_cancel_scrape_job_flips_status(client, email_sender):
-    await _register_and_login(client, email_sender)
+async def test_cancel_scrape_job_flips_status(client, email_sender, session_factory):
+    await _register_login_and_promote(client, email_sender, session_factory)
     create_response = await client.post(
         "/api/v1/scrape/jobs", json={"source_code": "polovniautomobili"}, headers=_csrf_headers(client)
     )
@@ -153,3 +193,54 @@ async def test_cancel_scrape_job_flips_status(client, email_sender):
 
     assert response.status_code == 200
     assert response.json()["status"] == ScrapeJobStatus.CANCELLED.value
+
+
+async def test_retry_scrape_job_reenqueues_failed_job(client, email_sender, session_factory, enqueuer):
+    await _register_login_and_promote(client, email_sender, session_factory)
+    create_response = await client.post(
+        "/api/v1/scrape/jobs", json={"source_code": "polovniautomobili"}, headers=_csrf_headers(client)
+    )
+    job_id = create_response.json()["id"]
+    await client.post(f"/api/v1/scrape/jobs/{job_id}/cancel", headers=_csrf_headers(client))
+
+    response = await client.post(f"/api/v1/scrape/jobs/{job_id}/retry", headers=_csrf_headers(client))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == ScrapeJobStatus.PENDING.value
+    assert body["finished_at"] is None
+    assert enqueuer.enqueued == [job_id, job_id]
+
+
+async def test_retry_scrape_job_rejects_non_terminal_job(client, email_sender, session_factory):
+    await _register_login_and_promote(client, email_sender, session_factory)
+    create_response = await client.post(
+        "/api/v1/scrape/jobs", json={"source_code": "polovniautomobili"}, headers=_csrf_headers(client)
+    )
+    job_id = create_response.json()["id"]
+
+    response = await client.post(f"/api/v1/scrape/jobs/{job_id}/retry", headers=_csrf_headers(client))
+
+    assert response.status_code == 400
+
+
+async def test_list_scrape_jobs_filters_by_status(client, email_sender, session_factory):
+    await _register_login_and_promote(client, email_sender, session_factory)
+    create_response = await client.post(
+        "/api/v1/scrape/jobs", json={"source_code": "polovniautomobili"}, headers=_csrf_headers(client)
+    )
+    job_id = create_response.json()["id"]
+    await client.post(f"/api/v1/scrape/jobs/{job_id}/cancel", headers=_csrf_headers(client))
+    await client.post("/api/v1/scrape/jobs", json={"source_code": "polovniautomobili"}, headers=_csrf_headers(client))
+
+    response = await client.get("/api/v1/scrape/jobs", params={"status": ScrapeJobStatus.CANCELLED.value})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [job["id"] for job in body] == [job_id]
+
+
+async def test_list_scrape_jobs_requires_admin(client, email_sender):
+    await _register_and_login(client, email_sender)
+    response = await client.get("/api/v1/scrape/jobs")
+    assert response.status_code == 403

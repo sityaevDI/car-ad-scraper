@@ -1,5 +1,7 @@
 import { Route, Routes } from 'react-router-dom'
+import { RequireAdmin } from './admin/RequireAdmin'
 import { Layout } from './components/Layout'
+import { AdminJobsPage } from './pages/AdminJobsPage'
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage'
 import { ListingDetailPage } from './pages/ListingDetailPage'
 import { LoginPage } from './pages/LoginPage'
@@ -19,6 +21,9 @@ export function App() {
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/verify-email" element={<VerifyEmailPage />} />
+        <Route element={<RequireAdmin />}>
+          <Route path="/admin/jobs" element={<AdminJobsPage />} />
+        </Route>
       </Route>
     </Routes>
   )

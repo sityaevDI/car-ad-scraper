@@ -30,6 +30,11 @@ export function Layout() {
           <nav className="flex items-center gap-4 text-sm">
             {isLoading ? null : user ? (
               <>
+                {user.role === 'admin' && (
+                  <Link to="/admin/jobs" className="font-medium text-slate-700 hover:text-slate-900">
+                    Задачи парсинга
+                  </Link>
+                )}
                 <span className="text-slate-600">{user.email}</span>
                 {!user.email_verified && (
                   <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
