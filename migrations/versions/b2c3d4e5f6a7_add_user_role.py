@@ -19,7 +19,15 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column('users', sa.Column('role', sa.String(length=16), nullable=False, server_default='user'))
+    op.add_column(
+        'users',
+        sa.Column(
+            'role',
+            sa.Enum('USER', 'ADMIN', name='userrole', native_enum=False, length=16),
+            nullable=False,
+            server_default='USER',
+        ),
+    )
     op.alter_column('users', 'role', server_default=None)
 
 
