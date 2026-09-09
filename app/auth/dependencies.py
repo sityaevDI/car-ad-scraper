@@ -10,7 +10,7 @@ from app.auth.sessions import SessionStore
 from app.config import get_settings
 from app.db.session import get_session
 from app.infrastructure.redis import get_redis
-from app.models.user import User
+from app.models.user import User, UserRole
 
 
 async def get_current_user(
@@ -35,6 +35,12 @@ async def get_current_user(
     if user is None:
         raise HTTPException(status_code=401, detail="Session expired or invalid")
     return user
+
+
+async def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return current_user
 
 
 def require_csrf(request: Request) -> None:

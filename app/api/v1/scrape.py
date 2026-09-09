@@ -3,10 +3,11 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 
 from arq.jobs import Job
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import get_current_user, require_csrf
+from app.auth.dependencies import require_admin, require_csrf
 from app.db.session import get_session
 from app.models.scrape_job import ScrapeJob, ScrapeJobStatus, ScrapeJobType
 from app.models.user import User
@@ -15,6 +16,8 @@ from app.scraping.queue import get_arq_pool, get_job_enqueuer
 from app.scraping.schemas import ScrapeJobCreate, ScrapeJobOut, encode_job_query
 from app.sources.registry import SOURCE_REGISTRY
 
+# Job management is an admin action (docs/adr/13_ADMIN.md "Controls"), not a regular-user
+# feature — every route here sits behind require_admin rather than get_current_user.
 router = APIRouter(prefix="/scrape", tags=["scrape"])
 
 _TERMINAL_STATUSES = {
@@ -23,6 +26,25 @@ _TERMINAL_STATUSES = {
     ScrapeJobStatus.FAILED,
     ScrapeJobStatus.CANCELLED,
 }
+_RETRYABLE_STATUSES = {ScrapeJobStatus.FAILED, ScrapeJobStatus.CANCELLED}
+
+
+@router.get("/jobs", response_model=list[ScrapeJobOut])
+async def list_scrape_jobs(
+    session: AsyncSession = Depends(get_session),
+    _current_user: User = Depends(require_admin),
+    status: ScrapeJobStatus | None = None,
+    source_id: uuid.UUID | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> list[ScrapeJobOut]:
+    stmt = select(ScrapeJob).order_by(ScrapeJob.created_at.desc()).limit(limit).offset(offset)
+    if status is not None:
+        stmt = stmt.where(ScrapeJob.status == status)
+    if source_id is not None:
+        stmt = stmt.where(ScrapeJob.source_id == source_id)
+    jobs = (await session.execute(stmt)).scalars().all()
+    return [ScrapeJobOut.model_validate(job) for job in jobs]
 
 
 @router.post("/jobs", response_model=ScrapeJobOut, status_code=201)
@@ -30,7 +52,7 @@ async def create_scrape_job(
     payload: ScrapeJobCreate,
     session: AsyncSession = Depends(get_session),
     enqueue: Callable[[str], Awaitable[None]] = Depends(get_job_enqueuer),
-    _current_user: User = Depends(get_current_user),
+    _current_user: User = Depends(require_admin),
     _csrf: None = Depends(require_csrf),
 ) -> ScrapeJobOut:
     adapter_cls = SOURCE_REGISTRY.get(payload.source_code)
@@ -61,7 +83,7 @@ async def create_scrape_job(
 async def get_scrape_job(
     job_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
-    _current_user: User = Depends(get_current_user),
+    _current_user: User = Depends(require_admin),
 ) -> ScrapeJobOut:
     job = await session.get(ScrapeJob, job_id)
     if job is None:
@@ -73,7 +95,7 @@ async def get_scrape_job(
 async def cancel_scrape_job(
     job_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
-    _current_user: User = Depends(get_current_user),
+    _current_user: User = Depends(require_admin),
     _csrf: None = Depends(require_csrf),
 ) -> ScrapeJobOut:
     """Best-effort: flips the DB row to CANCELLED and tries to abort the queued arq job. The
@@ -98,4 +120,31 @@ async def cancel_scrape_job(
         except Exception:  # noqa: BLE001 - cancellation is best-effort, DB state already updated
             pass
 
+    return ScrapeJobOut.model_validate(job)
+
+
+@router.post("/jobs/{job_id}/retry", response_model=ScrapeJobOut)
+async def retry_scrape_job(
+    job_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    enqueue: Callable[[str], Awaitable[None]] = Depends(get_job_enqueuer),
+    _current_user: User = Depends(require_admin),
+    _csrf: None = Depends(require_csrf),
+) -> ScrapeJobOut:
+    """Re-enqueues a FAILED/CANCELLED job in place (same row, same query) rather than creating a
+    new one, so its history stays under one job id.
+    """
+    job = await session.get(ScrapeJob, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Scrape job not found")
+    if job.status not in _RETRYABLE_STATUSES:
+        raise HTTPException(status_code=400, detail=f"Cannot retry a job in status {job.status.value!r}")
+
+    job.status = ScrapeJobStatus.PENDING
+    job.started_at = None
+    job.finished_at = None
+    job.error = None
+    await session.commit()
+
+    await enqueue(str(job.id))
     return ScrapeJobOut.model_validate(job)
