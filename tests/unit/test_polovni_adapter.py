@@ -3,8 +3,9 @@ from pathlib import Path
 import pytest
 import requests
 
-from app.scraping.fetch_outcome import FetchBlockedError, FetchOutcome
+from app.scraping.fetch_outcome import FetchBlockedError, FetchOutcome, ParserError
 from app.scraping.proxy import FetchError, FetchMetrics, ProxyEndpoint
+from app.sources.base import SourceListingRef
 from app.sources.polovniautomobili.adapter import PolovniAutomobiliSource
 
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "polovniautomobili"
@@ -95,7 +96,7 @@ async def test_fetch_direct_success_never_touches_proxy(monkeypatch):
     proxy_provider = FakeProxyProvider()
     adapter = PolovniAutomobiliSource(proxy_provider=proxy_provider)
 
-    monkeypatch.setattr(adapter.session, "get", lambda *a, **kw: _response(200, "direct ok"))
+    monkeypatch.setattr(adapter.fetcher.session, "get", lambda *a, **kw: _response(200, "direct ok"))
 
     text = await adapter._fetch("https://example.com/search")
 
@@ -113,7 +114,7 @@ async def test_fetch_falls_back_to_proxy_when_blocked(monkeypatch):
             return _response(403, "blocked")
         return _response(200, "via proxy")
 
-    monkeypatch.setattr(adapter.session, "get", fake_get)
+    monkeypatch.setattr(adapter.fetcher.session, "get", fake_get)
 
     text = await adapter._fetch("https://example.com/search")
 
@@ -126,7 +127,7 @@ async def test_fetch_raises_when_both_direct_and_proxy_are_blocked(monkeypatch):
     proxy_provider = FakeProxyProvider()
     adapter = PolovniAutomobiliSource(proxy_provider=proxy_provider)
 
-    monkeypatch.setattr(adapter.session, "get", lambda *a, **kw: _response(403, "blocked"))
+    monkeypatch.setattr(adapter.fetcher.session, "get", lambda *a, **kw: _response(403, "blocked"))
 
     with pytest.raises(FetchBlockedError) as exc_info:
         await adapter._fetch("https://example.com/search")
@@ -143,7 +144,7 @@ async def test_fetch_does_not_try_proxy_on_server_error(monkeypatch):
     proxy_provider = FakeProxyProvider()
     adapter = PolovniAutomobiliSource(proxy_provider=proxy_provider)
 
-    monkeypatch.setattr(adapter.session, "get", lambda *a, **kw: _response(503, "down"))
+    monkeypatch.setattr(adapter.fetcher.session, "get", lambda *a, **kw: _response(503, "down"))
 
     with pytest.raises(RuntimeError):
         await adapter._fetch("https://example.com/search")
@@ -156,8 +157,22 @@ async def test_fetch_records_outcomes_via_sink(monkeypatch):
     outcomes: list[FetchOutcome] = []
     adapter = PolovniAutomobiliSource(proxy_provider=FakeProxyProvider(), outcome_sink=outcomes.append)
 
-    monkeypatch.setattr(adapter.session, "get", lambda *a, **kw: _response(200, "ok"))
+    monkeypatch.setattr(adapter.fetcher.session, "get", lambda *a, **kw: _response(200, "ok"))
 
     await adapter._fetch("https://example.com/search")
 
     assert outcomes == [FetchOutcome.SUCCESS]
+
+
+async def test_fetch_listing_records_and_raises_parser_error_on_malformed_page(monkeypatch):
+    outcomes: list[FetchOutcome] = []
+    adapter = PolovniAutomobiliSource(proxy_provider=FakeProxyProvider(), outcome_sink=outcomes.append)
+
+    monkeypatch.setattr(
+        adapter.fetcher.session, "get", lambda *a, **kw: _response(200, "<html>no next data here</html>")
+    )
+
+    with pytest.raises(ParserError):
+        await adapter.fetch_listing(SourceListingRef(external_id="1", url="https://example.com/listing/1"))
+
+    assert outcomes == [FetchOutcome.SUCCESS, FetchOutcome.PARSER_ERROR]

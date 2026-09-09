@@ -4,7 +4,7 @@ from sqlalchemy import select
 
 import app.sources.registry as registry
 from app.models.listing import Listing, ListingStatus
-from app.scraping.fetch_outcome import FetchBlockedError, FetchOutcome
+from app.scraping.fetch_outcome import FetchBlockedError, FetchOutcome, ParserError
 from app.scraping.pipeline import run_scrape
 from app.search.query import SearchQuery
 from app.sources.base import SourceListing
@@ -63,6 +63,24 @@ class StubBlockedAdapter:
         raise FetchBlockedError(FetchOutcome.FORBIDDEN)
 
 
+class StubParserErrorAdapter:
+    source_code = "stub_source"
+    display_name = "Stub Source"
+    domain = "stub.example.com"
+    country = "RS"
+
+    def __init__(self, max_pages=5, proxy_provider=None, outcome_sink=None):
+        self.outcome_sink = outcome_sink
+
+    async def search_with_data(self, query: SearchQuery) -> AsyncIterator[SourceListing]:
+        if self.outcome_sink:
+            self.outcome_sink(FetchOutcome.SUCCESS)
+        yield _listing("1", 10_000)
+        if self.outcome_sink:
+            self.outcome_sink(FetchOutcome.PARSER_ERROR)
+        raise ParserError("unexpected page shape")
+
+
 async def test_run_scrape_persists_partial_results_when_blocked_mid_crawl(session, monkeypatch):
     monkeypatch.setitem(registry.SOURCE_REGISTRY, "stub_source", StubBlockedAdapter)
 
@@ -76,6 +94,19 @@ async def test_run_scrape_persists_partial_results_when_blocked_mid_crawl(sessio
 
     persisted = (await session.execute(select(Listing))).scalars().all()
     assert len(persisted) == 2
+
+
+async def test_run_scrape_persists_partial_results_on_parser_error_mid_crawl(session, monkeypatch):
+    monkeypatch.setitem(registry.SOURCE_REGISTRY, "stub_source", StubParserErrorAdapter)
+
+    stats = await run_scrape(session, source_code="stub_source", query=SearchQuery(), max_pages=1)
+
+    assert stats.listings_seen == 1
+    assert stats.blocked is True
+    assert stats.outcome_counts == {"success": 1, "parser_error": 1}
+
+    persisted = (await session.execute(select(Listing))).scalars().all()
+    assert len(persisted) == 1
 
 
 async def test_run_scrape_marks_missing_listings_removed_when_mark_removed_is_true(session, monkeypatch):
