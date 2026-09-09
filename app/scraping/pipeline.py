@@ -2,6 +2,7 @@
 for local dev) or from an arq job (app/scraping/worker.py).
 """
 
+import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 
@@ -26,6 +27,11 @@ class ScrapeStats:
     outcome_counts: dict[str, int] = field(default_factory=dict)
     blocked: bool = False
     seen_external_ids: set[str] = field(default_factory=set)
+    # Per-listing detail the aggregate counts above don't carry — consumed by
+    # app/notifications/matching.py (issues #21/#26) to generate NEW_MATCH/PRICE_DROP events
+    # without re-querying "what changed this run".
+    new_listing_ids: list[uuid.UUID] = field(default_factory=list)
+    price_drops: list[tuple[uuid.UUID, int, int]] = field(default_factory=list)  # (listing_id, previous, current)
 
 
 async def get_or_create_source(session: AsyncSession, code: str, name: str, domain: str, country: str) -> Source:
@@ -82,11 +88,14 @@ async def run_scrape(
         async for source_listing in _search_listings(adapter, query):
             stats.listings_seen += 1
             stats.seen_external_ids.add(source_listing.external_id)
-            _, is_new = await repository.upsert_listing(source.id, source_listing)
+            listing, is_new, previous_price = await repository.upsert_listing(source.id, source_listing)
             if is_new:
                 stats.listings_created += 1
+                stats.new_listing_ids.append(listing.id)
             else:
                 stats.listings_updated += 1
+                if previous_price is not None and previous_price > listing.price:
+                    stats.price_drops.append((listing.id, previous_price, listing.price))
     except (FetchBlockedError, ParserError):
         # Stop pagination early but keep whatever was already upserted this run — a partial
         # result is more useful than losing it. FetchBlockedError means the source just told us

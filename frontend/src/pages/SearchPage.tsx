@@ -1,6 +1,7 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useLocation } from 'react-router-dom'
+import { useCurrentUser } from '../auth/useCurrentUser'
 import { ListingCard } from '../components/ListingCard'
 import { Pagination } from '../components/Pagination'
 import { EmptyState, ErrorState, LoadingState } from '../components/StateMessage'
@@ -8,6 +9,7 @@ import { SuccessText } from '../components/AuthCard'
 import { ApiError } from '../lib/client'
 import type { GroupField, SearchQuery } from '../lib/search'
 import { DEFAULT_GROUP_BY, searchApi } from '../lib/search'
+import { savedSearchesApi } from '../lib/savedSearches'
 import { PAGE_SIZE } from '../search/constants'
 import { GroupCard } from '../search/GroupCard'
 import { SearchFilters } from '../search/SearchFilters'
@@ -15,10 +17,16 @@ import { ViewControls } from '../search/ViewControls'
 
 export function SearchPage() {
   const location = useLocation()
-  const justRegistered = Boolean((location.state as { justRegistered?: boolean } | null)?.justRegistered)
+  const state = location.state as { justRegistered?: boolean; savedQuery?: SearchQuery } | null
+  const justRegistered = Boolean(state?.justRegistered)
+  const { user } = useCurrentUser()
 
-  const [draftQuery, setDraftQuery] = useState<SearchQuery>({})
-  const [appliedQuery, setAppliedQuery] = useState<SearchQuery>({})
+  const [draftQuery, setDraftQuery] = useState<SearchQuery>(state?.savedQuery ?? {})
+  const [appliedQuery, setAppliedQuery] = useState<SearchQuery>(state?.savedQuery ?? {})
+  const [saveName, setSaveName] = useState('')
+  const [isSavingSearch, setIsSavingSearch] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [saveSuccess, setSaveSuccess] = useState(false)
   const [groupBy, setGroupBy] = useState<GroupField[]>(DEFAULT_GROUP_BY)
   const [minGroupCount, setMinGroupCount] = useState<number | null>(null)
   const [sort, setSort] = useState('count_desc')
@@ -53,6 +61,21 @@ export function SearchPage() {
   const total = isGrouped ? (query.data?.total_groups ?? 0) : (query.data?.total_listings ?? 0)
   const isEmpty = !query.isLoading && !query.isError && total === 0
 
+  async function handleSaveSearch(event: React.FormEvent) {
+    event.preventDefault()
+    setSaveError(null)
+    setIsSavingSearch(true)
+    try {
+      await savedSearchesApi.create(saveName, appliedQuery)
+      setSaveName('')
+      setSaveSuccess(true)
+    } catch (err) {
+      setSaveError(err instanceof ApiError ? err.message : 'Не удалось сохранить поиск')
+    } finally {
+      setIsSavingSearch(false)
+    }
+  }
+
   return (
     <div className="space-y-4">
       {justRegistered && (
@@ -66,8 +89,30 @@ export function SearchPage() {
         onSubmit={() => {
           setAppliedQuery(draftQuery)
           setPage(1)
+          setSaveSuccess(false)
         }}
       />
+
+      {user && (
+        <form onSubmit={handleSaveSearch} className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white p-3">
+          <input
+            value={saveName}
+            onChange={(e) => setSaveName(e.target.value)}
+            placeholder="Название сохранённого поиска"
+            required
+            className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+          />
+          <button
+            type="submit"
+            disabled={isSavingSearch}
+            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+          >
+            {isSavingSearch ? 'Сохраняем…' : 'Сохранить поиск с текущими фильтрами'}
+          </button>
+          {saveError && <span className="text-sm text-red-600">{saveError}</span>}
+          {saveSuccess && !saveError && <span className="text-sm text-emerald-600">Сохранено ✓</span>}
+        </form>
+      )}
 
       <ViewControls
         groupBy={groupBy}

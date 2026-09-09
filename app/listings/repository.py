@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.follow import Follow
 from app.models.listing import Listing, ListingStatus
 from app.models.snapshot import ListingSnapshot
 from app.sources.base import SourceListing
@@ -43,9 +44,11 @@ class ListingRepository:
         )
         return result.scalar_one_or_none()
 
-    async def upsert_listing(self, source_id: uuid.UUID, data: SourceListing) -> tuple[Listing, bool]:
+    async def upsert_listing(self, source_id: uuid.UUID, data: SourceListing) -> tuple[Listing, bool, int | None]:
         """Insert a new Listing + its first Snapshot, or refresh an existing one and append a new
-        Snapshot only if price/mileage/title actually changed. Returns (listing, is_new).
+        Snapshot only if price/mileage/title actually changed. Returns (listing, is_new,
+        previous_price) — previous_price is the price before this update, only set when the price
+        actually changed (used by app/notifications/matching.py to detect drops for #21/#26).
         """
         now = datetime.now(timezone.utc)
         existing = await self._find_existing(source_id, data.external_id)
@@ -78,7 +81,7 @@ class ListingRepository:
             self.session.add(listing)
             await self.session.flush()
             self._add_snapshot(listing, data, now)
-            return listing, True
+            return listing, True, None
 
         existing.last_seen_at = now
         existing.last_checked_at = now
@@ -90,13 +93,16 @@ class ListingRepository:
             or existing.mileage_km != data.mileage_km
             or existing.title != data.title
         )
+        previous_price = None
         if changed:
+            if existing.price != data.price:
+                previous_price = existing.price
             existing.price = data.price
             existing.mileage_km = data.mileage_km
             existing.title = data.title
             self._add_snapshot(existing, data, now)
 
-        return existing, False
+        return existing, False, previous_price
 
     async def mark_missing_as_removed(self, source_id: uuid.UUID, seen_external_ids: set[str]) -> int:
         """Mark active listings for a source that were not encountered in the latest crawl as
@@ -128,3 +134,36 @@ class ListingRepository:
                 raw_payload=data.raw,
             )
         )
+
+
+class FollowRepository:
+    """Owns Follow persistence — see issue #21. Notification generation on price drop lives in
+    app/notifications/matching.py, not here.
+    """
+
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def get(self, user_id: uuid.UUID, listing_id: uuid.UUID) -> Follow | None:
+        result = await self.session.execute(
+            select(Follow).where(Follow.user_id == user_id, Follow.listing_id == listing_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def follow(self, user_id: uuid.UUID, listing_id: uuid.UUID) -> Follow:
+        existing = await self.get(user_id, listing_id)
+        if existing is not None:
+            return existing
+        follow = Follow(user_id=user_id, listing_id=listing_id)
+        self.session.add(follow)
+        await self.session.flush()
+        return follow
+
+    async def unfollow(self, user_id: uuid.UUID, listing_id: uuid.UUID) -> None:
+        existing = await self.get(user_id, listing_id)
+        if existing is not None:
+            await self.session.delete(existing)
+
+    async def list_followers(self, listing_id: uuid.UUID) -> list[Follow]:
+        result = await self.session.execute(select(Follow).where(Follow.listing_id == listing_id))
+        return list(result.scalars().all())

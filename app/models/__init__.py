@@ -1,5 +1,6 @@
 """Import every model module so `Base.metadata` (and Alembic autogenerate) sees all tables."""
 
+from app.models.follow import Follow
 from app.models.listing import Listing, ListingStatus
 from app.models.notification import Notification, NotificationType
 from app.models.saved_search import SavedSearch
@@ -17,6 +18,7 @@ __all__ = [
     "Listing",
     "ListingStatus",
     "ListingSnapshot",
+    "Follow",
     "User",
     "SavedSearch",
     "ScheduledScrape",

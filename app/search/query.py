@@ -36,6 +36,22 @@ class SearchQuery(BaseModel):
         canonical = json.dumps(self.model_dump(exclude_none=True), sort_keys=True, default=str)
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
+    def describe(self) -> str:
+        """Short human-readable summary of the active filters — used in the NEW_MATCH email
+        (app/notifications/delivery.py) so "N new listings" comes with what was actually searched
+        for. Mirrors frontend/src/pages/SavedSearchesPage.tsx's describeQuery().
+        """
+        parts: list[str] = []
+        if self.make:
+            parts.append(self.make)
+        if self.models:
+            parts.append("/".join(self.models))
+        if self.year_min or self.year_max:
+            parts.append(f"{self.year_min or '…'}–{self.year_max or '…'}")
+        if self.price_min or self.price_max:
+            parts.append(f"€{self.price_min or '…'}–{self.price_max or '…'}")
+        return ", ".join(parts) if parts else "все объявления"
+
 
 class SearchRequest(BaseModel):
     query: SearchQuery = Field(default_factory=SearchQuery)
