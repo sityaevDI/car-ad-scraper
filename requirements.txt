@@ -24,3 +24,4 @@ argon2-cffi
 email-validator
 disposable-email-domains
 httpx
+arq

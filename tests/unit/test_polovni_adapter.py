@@ -1,8 +1,37 @@
 from pathlib import Path
 
+import pytest
+import requests
+
+from app.scraping.fetch_outcome import FetchBlockedError, FetchOutcome
+from app.scraping.proxy import FetchError, FetchMetrics, ProxyEndpoint
 from app.sources.polovniautomobili.adapter import PolovniAutomobiliSource
 
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "polovniautomobili"
+
+_PROXY = ProxyEndpoint(url="http://user:pass@geo.iproyal.com:12321")
+
+
+def _response(status_code: int, text: str = "ok") -> requests.Response:
+    response = requests.Response()
+    response.status_code = status_code
+    response._content = text.encode("utf-8")
+    return response
+
+
+class FakeProxyProvider:
+    def __init__(self):
+        self.successes: list[tuple[ProxyEndpoint, FetchMetrics]] = []
+        self.failures: list[tuple[ProxyEndpoint, FetchError]] = []
+
+    async def acquire(self, source: str) -> ProxyEndpoint | None:
+        return _PROXY
+
+    async def report_success(self, proxy: ProxyEndpoint, metrics: FetchMetrics) -> None:
+        self.successes.append((proxy, metrics))
+
+    async def report_failure(self, proxy: ProxyEndpoint, error: FetchError) -> None:
+        self.failures.append((proxy, error))
 
 
 def test_parse_search_page_extracts_normalized_listings():
@@ -60,3 +89,75 @@ def test_build_search_url_includes_filters():
     assert "model%5B%5D=Octavia" in url
     assert "price_to=15000" in url
     assert "year_from=2018" in url
+
+
+async def test_fetch_direct_success_never_touches_proxy(monkeypatch):
+    proxy_provider = FakeProxyProvider()
+    adapter = PolovniAutomobiliSource(proxy_provider=proxy_provider)
+
+    monkeypatch.setattr(adapter.session, "get", lambda *a, **kw: _response(200, "direct ok"))
+
+    text = await adapter._fetch("https://example.com/search")
+
+    assert text == "direct ok"
+    assert proxy_provider.successes == []
+    assert proxy_provider.failures == []
+
+
+async def test_fetch_falls_back_to_proxy_when_blocked(monkeypatch):
+    proxy_provider = FakeProxyProvider()
+    adapter = PolovniAutomobiliSource(proxy_provider=proxy_provider)
+
+    def fake_get(url, timeout, headers, proxies=None):
+        if proxies is None:
+            return _response(403, "blocked")
+        return _response(200, "via proxy")
+
+    monkeypatch.setattr(adapter.session, "get", fake_get)
+
+    text = await adapter._fetch("https://example.com/search")
+
+    assert text == "via proxy"
+    assert len(proxy_provider.successes) == 1
+    assert proxy_provider.failures == []
+
+
+async def test_fetch_raises_when_both_direct_and_proxy_are_blocked(monkeypatch):
+    proxy_provider = FakeProxyProvider()
+    adapter = PolovniAutomobiliSource(proxy_provider=proxy_provider)
+
+    monkeypatch.setattr(adapter.session, "get", lambda *a, **kw: _response(403, "blocked"))
+
+    with pytest.raises(FetchBlockedError) as exc_info:
+        await adapter._fetch("https://example.com/search")
+
+    assert exc_info.value.outcome == FetchOutcome.FORBIDDEN
+    assert proxy_provider.successes == []
+    assert len(proxy_provider.failures) == 1
+
+
+async def test_fetch_does_not_try_proxy_on_server_error(monkeypatch):
+    """A 5xx or timeout won't be fixed by a proxy, and every proxied request burns the account's
+    limited residential-proxy quota — those outcomes must be re-raised without a proxy attempt.
+    """
+    proxy_provider = FakeProxyProvider()
+    adapter = PolovniAutomobiliSource(proxy_provider=proxy_provider)
+
+    monkeypatch.setattr(adapter.session, "get", lambda *a, **kw: _response(503, "down"))
+
+    with pytest.raises(RuntimeError):
+        await adapter._fetch("https://example.com/search")
+
+    assert proxy_provider.successes == []
+    assert proxy_provider.failures == []
+
+
+async def test_fetch_records_outcomes_via_sink(monkeypatch):
+    outcomes: list[FetchOutcome] = []
+    adapter = PolovniAutomobiliSource(proxy_provider=FakeProxyProvider(), outcome_sink=outcomes.append)
+
+    monkeypatch.setattr(adapter.session, "get", lambda *a, **kw: _response(200, "ok"))
+
+    await adapter._fetch("https://example.com/search")
+
+    assert outcomes == [FetchOutcome.SUCCESS]

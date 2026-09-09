@@ -34,6 +34,14 @@ class Settings(BaseSettings):
     resend_api_key: str | None = None
     email_from_address: str = "onboarding@resend.dev"
 
+    # Residential proxy fallback for blocked scrape requests (see app/scraping/proxy.py). Unset ->
+    # NullProxyProvider, i.e. direct-fetch-only, so local dev/CI never need real credentials.
+    proxy_provider: str | None = None
+    proxy_host: str | None = None
+    proxy_port: int | None = None
+    proxy_username: str | None = None
+    proxy_password: str | None = None
+
 
 @lru_cache
 def get_settings() -> Settings:
