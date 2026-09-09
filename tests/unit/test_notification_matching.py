@@ -31,14 +31,18 @@ async def session_factory():
     await engine.dispose()
 
 
-async def _seed_source_and_listing(session, **overrides) -> tuple[uuid.UUID, uuid.UUID]:
-    source = Source(code="polovniautomobili", name="Polovni Automobili", domain="x.rs", country="RS")
-    session.add(source)
-    await session.flush()
+async def _seed_source_and_listing(
+    session, source_id: uuid.UUID | None = None, **overrides
+) -> tuple[uuid.UUID, uuid.UUID]:
+    if source_id is None:
+        source = Source(code="polovniautomobili", name="Polovni Automobili", domain="x.rs", country="RS")
+        session.add(source)
+        await session.flush()
+        source_id = source.id
 
     now = datetime.now(timezone.utc)
     defaults = dict(
-        source_id=source.id,
+        source_id=source_id,
         external_id="1",
         canonical_url="https://x.rs/1",
         title="Skoda Octavia",
@@ -57,7 +61,7 @@ async def _seed_source_and_listing(session, **overrides) -> tuple[uuid.UUID, uui
     listing = Listing(**defaults)
     session.add(listing)
     await session.flush()
-    return source.id, listing.id
+    return source_id, listing.id
 
 
 async def test_price_drop_notifies_followers(session_factory):
@@ -119,7 +123,35 @@ async def test_new_match_notifies_owner_of_matching_saved_search(session_factory
         assert len(notifications) == 1
         assert notifications[0].user_id == user_id
         assert notifications[0].type == NotificationType.NEW_MATCH
+        assert notifications[0].listing_id is None
         assert notifications[0].payload["saved_search_name"] == "Skoda alert"
+        assert notifications[0].payload["new_listings_count"] == 1
+        assert notifications[0].payload["query_description"] == "Skoda"
+
+
+async def test_new_match_creates_one_aggregated_notification_for_multiple_new_listings(session_factory):
+    async with session_factory() as session:
+        source_id, listing_id_1 = await _seed_source_and_listing(session, external_id="1")
+        _, listing_id_2 = await _seed_source_and_listing(session, source_id=source_id, external_id="2")
+        user_id = uuid.uuid4()
+        query = SearchQuery(make="Skoda")
+        session.add(SavedSearch(user_id=user_id, name="Skoda alert", query=query.model_dump(), enabled=True))
+        job = ScrapeJob(
+            source_id=source_id,
+            job_type=ScrapeJobType.SAVED_SEARCH_REFRESH,
+            status=ScrapeJobStatus.RUNNING,
+            query=encode_job_query(query, max_pages=5),
+        )
+        session.add(job)
+        await session.commit()
+
+        stats = ScrapeStats(new_listing_ids=[listing_id_1, listing_id_2])
+        await generate_notifications_for_job(session, job, stats)
+        await session.commit()
+
+        notifications = (await session.execute(select(Notification))).scalars().all()
+        assert len(notifications) == 1
+        assert notifications[0].payload["new_listings_count"] == 2
 
 
 async def test_new_match_ignores_non_matching_saved_search(session_factory):

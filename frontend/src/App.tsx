@@ -7,6 +7,7 @@ import { ForgotPasswordPage } from './pages/ForgotPasswordPage'
 import { ListingDetailPage } from './pages/ListingDetailPage'
 import { LoginPage } from './pages/LoginPage'
 import { NotificationsPage } from './pages/NotificationsPage'
+import { OpenSavedSearchPage } from './pages/OpenSavedSearchPage'
 import { RegisterPage } from './pages/RegisterPage'
 import { ResetPasswordPage } from './pages/ResetPasswordPage'
 import { SavedSearchesPage } from './pages/SavedSearchesPage'
@@ -21,6 +22,7 @@ export function App() {
         <Route path="/listings/:id" element={<ListingDetailPage />} />
         <Route element={<RequireAuth />}>
           <Route path="/saved-searches" element={<SavedSearchesPage />} />
+          <Route path="/saved-searches/:id" element={<OpenSavedSearchPage />} />
           <Route path="/notifications" element={<NotificationsPage />} />
         </Route>
         <Route path="/login" element={<LoginPage />} />

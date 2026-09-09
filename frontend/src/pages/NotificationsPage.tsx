@@ -2,8 +2,17 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { EmptyState, ErrorState, LoadingState } from '../components/StateMessage'
 import { formatDate } from '../lib/format'
+import type { NotificationOut } from '../lib/notifications'
 import { notificationsApi } from '../lib/notifications'
 import { notificationDescription, notificationTitle } from '../notifications/format'
+
+function notificationLinkTo(notification: NotificationOut): string | null {
+  if (notification.listing_id) return `/listings/${notification.listing_id}`
+  if (notification.type === 'new_match' && typeof notification.payload?.saved_search_id === 'string') {
+    return `/saved-searches/${notification.payload.saved_search_id}`
+  }
+  return null
+}
 
 export function NotificationsPage() {
   const query = useQuery({ queryKey: ['notifications'], queryFn: notificationsApi.list })
@@ -45,10 +54,11 @@ export function NotificationsPage() {
                 )}
               </div>
             )
-            return notification.listing_id ? (
+            const linkTo = notificationLinkTo(notification)
+            return linkTo ? (
               <Link
                 key={notification.id}
-                to={`/listings/${notification.listing_id}`}
+                to={linkTo}
                 className={notification.read_at ? 'block hover:bg-slate-50' : 'block bg-slate-50 hover:bg-slate-100'}
               >
                 {content}

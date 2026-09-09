@@ -67,6 +67,10 @@ async def _find_matching_saved_searches(session: AsyncSession, query_hash: str) 
 async def _notify_new_matches(
     session: AsyncSession, service: NotificationService, job: ScrapeJob, stats: ScrapeStats
 ) -> None:
+    """One notification per (saved search, scrape run) — "N new listings for X" — not one per
+    listing. Every new listing this run matched the same job query, which is exactly the saved
+    search's query, so the count is the same for every saved search that matches it.
+    """
     if not stats.new_listing_ids:
         return
 
@@ -75,19 +79,15 @@ async def _notify_new_matches(
     if not matching_saved_searches:
         return
 
-    for listing_id in stats.new_listing_ids:
-        listing = await session.get(Listing, listing_id)
-        if listing is None:
-            continue
-        for saved_search in matching_saved_searches:
-            await service.notify(
-                saved_search.user_id,
-                NotificationType.NEW_MATCH,
-                {
-                    "listing_title": listing.title,
-                    "listing_price": listing.price,
-                    "currency": listing.currency,
-                    "saved_search_name": saved_search.name,
-                },
-                listing_id=listing_id,
-            )
+    count = len(stats.new_listing_ids)
+    for saved_search in matching_saved_searches:
+        await service.notify(
+            saved_search.user_id,
+            NotificationType.NEW_MATCH,
+            {
+                "saved_search_id": str(saved_search.id),
+                "saved_search_name": saved_search.name,
+                "new_listings_count": count,
+                "query_description": job_query.describe(),
+            },
+        )

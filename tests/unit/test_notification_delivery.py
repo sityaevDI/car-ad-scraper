@@ -33,17 +33,45 @@ class RecordingEmailSender:
 def test_render_new_match():
     notification = Notification(
         type=NotificationType.NEW_MATCH,
-        payload={"listing_title": "Skoda Octavia", "listing_price": 10_000, "currency": "EUR"},
+        payload={
+            "saved_search_id": "11111111-1111-1111-1111-111111111111",
+            "saved_search_name": "Skoda всех годов",
+            "new_listings_count": 3,
+            "query_description": "Skoda",
+        },
     )
     subject, body = render_notification(notification)
-    assert "Skoda Octavia" in subject
-    assert "10000" in body or "10_000" in body
+    assert "Skoda всех годов" in subject
+    assert "3" in subject
+    assert "Skoda всех годов" in body
+    assert "Skoda" in body  # query_description
+    assert "/saved-searches/11111111-1111-1111-1111-111111111111" in body
+
+
+def test_render_new_match_agrees_singular_plural_forms():
+    def subject_for(count: int) -> str:
+        notification = Notification(
+            type=NotificationType.NEW_MATCH,
+            payload={"saved_search_name": "X", "new_listings_count": count, "query_description": ""},
+        )
+        return render_notification(notification)[0]
+
+    assert "1 новое объявление" in subject_for(1)
+    assert "2 новых объявления" in subject_for(2)
+    assert "5 новых объявлений" in subject_for(5)
+    assert "11 новых объявлений" in subject_for(11)
+    assert "21 новое объявление" in subject_for(21)
 
 
 def test_render_price_drop_shows_before_and_after():
     notification = Notification(
         type=NotificationType.PRICE_DROP,
-        payload={"listing_title": "Skoda Octavia", "previous_price": 12_000, "current_price": 10_000, "currency": "EUR"},
+        payload={
+            "listing_title": "Skoda Octavia",
+            "previous_price": 12_000,
+            "current_price": 10_000,
+            "currency": "EUR",
+        },
     )
     subject, body = render_notification(notification)
     assert "Skoda Octavia" in subject
@@ -57,7 +85,9 @@ async def test_send_notification_email_delivers_to_owning_user(session_factory):
         session.add(user)
         await session.flush()
         notification = Notification(
-            user_id=user.id, type=NotificationType.NEW_MATCH, payload={"listing_title": "Skoda"}
+            user_id=user.id,
+            type=NotificationType.NEW_MATCH,
+            payload={"saved_search_name": "Skoda", "new_listings_count": 1, "query_description": "Skoda"},
         )
         session.add(notification)
         await session.commit()

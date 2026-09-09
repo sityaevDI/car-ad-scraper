@@ -14,6 +14,8 @@ export interface SavedSearchOut {
 export const savedSearchesApi = {
   list: () => apiFetch<SavedSearchOut[]>('/api/v1/saved-searches'),
 
+  get: (id: string) => apiFetch<SavedSearchOut>(`/api/v1/saved-searches/${id}`),
+
   create: (name: string, query: SearchQuery) =>
     apiFetch<SavedSearchOut>('/api/v1/saved-searches', {
       method: 'POST',
