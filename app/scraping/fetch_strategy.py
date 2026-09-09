@@ -28,6 +28,9 @@ class FetchResult:
     outcome: FetchOutcome
     text: str | None = None
     status_code: int | None = None
+    # Only set for exception-classified outcomes (TIMEOUT/NETWORK_ERROR) — a response-classified
+    # outcome already has status_code/text to explain itself.
+    detail: str | None = None
 
 
 class FetchStrategy(Protocol):
@@ -36,18 +39,19 @@ class FetchStrategy(Protocol):
 
 def _http_request(
     session: requests.Session, url: str, timeout: int, proxy_url: str | None
-) -> tuple[FetchOutcome, requests.Response | None]:
+) -> tuple[FetchOutcome, requests.Response | None, str | None]:
     proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
     try:
         response = session.get(url, timeout=timeout, headers=default_request_headers(), proxies=proxies)
     except Exception as exc:  # noqa: BLE001 - classified below, not swallowed
-        return classify_exception(exc), None
-    return classify_response(response), response
+        outcome, detail = classify_exception(exc)
+        return outcome, None, detail
+    return classify_response(response), response, None
 
 
-def _to_result(outcome: FetchOutcome, response: requests.Response | None) -> FetchResult:
+def _to_result(outcome: FetchOutcome, response: requests.Response | None, detail: str | None = None) -> FetchResult:
     if response is None:
-        return FetchResult(outcome=outcome)
+        return FetchResult(outcome=outcome, detail=detail)
     return FetchResult(outcome=outcome, text=response.text, status_code=response.status_code)
 
 
@@ -62,21 +66,26 @@ class HttpFetcher:
         self._outcome_sink = outcome_sink
 
     async def fetch(self, url: str) -> FetchResult:
-        outcome, response = await asyncio.to_thread(_http_request, self.session, url, self.timeout, None)
+        outcome, response, detail = await asyncio.to_thread(_http_request, self.session, url, self.timeout, None)
         if self._outcome_sink is not None:
             self._outcome_sink(outcome)
-        return _to_result(outcome, response)
+        return _to_result(outcome, response, detail)
 
 
 class ProxyHttpFetcher:
-    """Direct-first, proxy-fallback-only-when-blocked (docs/adr/05_ANTI_BOT_PROXY.md §2-4). A
-    proxy attempt is only made when the direct attempt looks block-like (403/429/challenge/
-    captcha) — a timeout or 5xx won't be fixed by a proxy, and every proxied request burns the
-    account's limited residential-proxy quota, so those outcomes are returned immediately instead.
+    """Direct-first, proxy-fallback-only-when-worth-it (docs/adr/05_ANTI_BOT_PROXY.md §2-4). A
+    proxy attempt is made when the direct attempt looks block-like (403/429/challenge/captcha) or
+    came back as NETWORK_ERROR — a connection refused/reset instead of a proper 403 is itself a
+    plausible sign of an IP-level block, so it's worth the one retry. TIMEOUT and SERVER_ERROR are
+    NOT retried through the proxy: those point at the origin being slow/down, which a different
+    egress IP won't fix, and every proxied request burns the account's limited residential-proxy
+    quota.
 
     Ported out of what used to be `PolovniAutomobiliSource._fetch()` so any source adapter can
     reuse the same direct/proxy decision without reimplementing it.
     """
+
+    _PROXY_ELIGIBLE = BLOCK_LIKE | {FetchOutcome.NETWORK_ERROR}
 
     def __init__(
         self,
@@ -96,16 +105,16 @@ class ProxyHttpFetcher:
             self._outcome_sink(outcome)
 
     async def fetch(self, url: str) -> FetchResult:
-        outcome, response = await asyncio.to_thread(_http_request, self.session, url, self.timeout, None)
+        outcome, response, detail = await asyncio.to_thread(_http_request, self.session, url, self.timeout, None)
         self._record(outcome)
-        if outcome == FetchOutcome.SUCCESS or outcome not in BLOCK_LIKE:
-            return _to_result(outcome, response)
+        if outcome not in self._PROXY_ELIGIBLE:
+            return _to_result(outcome, response, detail)
 
         proxy = await self.proxy_provider.acquire(self.source)
         if proxy is None:
-            return _to_result(outcome, response)
+            return _to_result(outcome, response, detail)
 
-        proxy_outcome, proxy_response = await asyncio.to_thread(
+        proxy_outcome, proxy_response, proxy_detail = await asyncio.to_thread(
             _http_request, self.session, url, self.timeout, proxy.url
         )
         self._record(proxy_outcome)
@@ -114,7 +123,7 @@ class ProxyHttpFetcher:
             await self.proxy_provider.report_success(proxy, FetchMetrics(status_code=proxy_response.status_code))
         else:
             await self.proxy_provider.report_failure(proxy, FetchError(outcome=proxy_outcome))
-        return _to_result(proxy_outcome, proxy_response)
+        return _to_result(proxy_outcome, proxy_response, proxy_detail)
 
 
 class PlaywrightFetcher:
@@ -144,4 +153,5 @@ def raise_for_blocked(result: FetchResult, url: str) -> str:
         return result.text
     if result.outcome in BLOCK_LIKE:
         raise FetchBlockedError(result.outcome)
-    raise RuntimeError(f"Fetch failed for {url}: {result.outcome.value}")
+    suffix = f" ({result.detail})" if result.detail else ""
+    raise RuntimeError(f"Fetch failed for {url}: {result.outcome.value}{suffix}")

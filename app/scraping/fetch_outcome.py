@@ -76,10 +76,16 @@ def classify_response(response: requests.Response) -> FetchOutcome:
     return FetchOutcome.FORBIDDEN
 
 
-def classify_exception(exc: Exception) -> FetchOutcome:
+def classify_exception(exc: Exception) -> tuple[FetchOutcome, str]:
+    """Returns the outcome alongside `f"{type}: {message}"` — a bare NETWORK_ERROR doesn't say
+    whether it was DNS failure, connection refused, connection reset, or a TLS error, and that
+    distinction matters when reading logs for a source that's silently dropping connections
+    instead of returning a proper 403/429.
+    """
+    detail = f"{type(exc).__name__}: {exc}"
     if isinstance(exc, requests.Timeout):
-        return FetchOutcome.TIMEOUT
-    return FetchOutcome.NETWORK_ERROR
+        return FetchOutcome.TIMEOUT, detail
+    return FetchOutcome.NETWORK_ERROR, detail
 
 
 class OutcomeCounter:
