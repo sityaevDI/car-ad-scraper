@@ -4,13 +4,13 @@
 
 This project aims to provide an efficient solution for providing bigger picture of the used cars market in Serbia by web
 scraping and aggregating stored data.
-It leverages modern technologies such as Docker, Docker Compose, and MongoDB to ensure easy deployment and management.
+It leverages modern technologies such as Docker, Docker Compose, and PostgreSQL to ensure easy deployment and management.
 
 ### Features
 
-* Frontend: Built with **vanilla javascript**, it offers a responsive and user-friendly interface.
+* Frontend: Built with **React + TypeScript + Vite**, it offers a responsive and user-friendly interface.
 * Backend: Powered by **FastAPI**, it ensures robust and efficient data processing.
-* Database: Uses **MongoDB** for flexible and scalable data storage.
+* Database: Uses **PostgreSQL** for storage, with **Redis** for sessions/caching.
 
 ## Getting Started
 
@@ -36,13 +36,12 @@ cd polovni-scraper
 docker-compose up --build
 ```
 
-This command will build the Docker images for the frontend, backend, and MongoDB services and start them.
+This command will build the Docker images for the frontend, api, Postgres, and Redis services and start them.
 
 #### Accessing the Application
 
 * Frontend: Open your web browser and go to http://localhost:3000
-* Backend: API is accessible at http://localhost:8000. Documentation: http://localhost:8000/docs.
-* MongoDB: MongoDB instance is available at http://localhost:27017. Accessible via MongoDB Compass.
+* API: accessible at http://localhost:8001. Documentation: http://localhost:8001/docs.
 
 #### Stopping the Application
 

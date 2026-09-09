@@ -3,26 +3,14 @@ services:
     build:
       context: ./frontend
       args:
-        # Browser-facing URL for the new Postgres-backed `api` service (see below) — not the
-        # in-network `api:8001` hostname, the browser resolves this outside the compose network.
+        # Browser-facing URL for the `api` service (see below) — not the in-network `api:8001`
+        # hostname, the browser resolves this outside the compose network.
         VITE_API_BASE_URL: "http://localhost:8001"
     ports:
       - "3000:80"
     depends_on:
       - api
 
-  backend:
-    build:
-      context: .
-    ports:
-      - "8000:8000"
-    environment:
-      MONGODB_URL: "mongodb://mongodb:27017"
-    depends_on:
-      - mongodb
-
-  # New Postgres-backed app/ (search API v1). Runs alongside the legacy `backend` service above,
-  # not replacing it — `backend` is still what's actually deployed.
   api:
     build:
       context: .
@@ -35,13 +23,6 @@ services:
     depends_on:
       - postgres
       - redis
-
-  mongodb:
-    image: mongo
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongo_data:/data/db
 
   postgres:
     image: postgres:16
@@ -60,5 +41,4 @@ services:
       - "6379:6379"
 
 volumes:
-  mongo_data:
   postgres_data:
