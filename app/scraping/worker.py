@@ -14,7 +14,7 @@ from arq.connections import RedisSettings
 
 from app.config import get_settings
 from app.db.session import get_session_factory
-from app.models.scrape_job import ScrapeJob, ScrapeJobStatus
+from app.models.scrape_job import ScrapeJob, ScrapeJobStatus, ScrapeJobType
 from app.models.source import Source
 from app.scraping.pipeline import run_scrape
 from app.scraping.proxy import get_proxy_provider
@@ -51,6 +51,7 @@ async def run_scrape_job(ctx: dict[str, Any], job_id: str) -> None:
                 query=query,
                 max_pages=max_pages,
                 proxy_provider=ctx["proxy_provider"],
+                mark_removed=job.job_type == ScrapeJobType.FULL_SOURCE_REFRESH,
             )
         except Exception as exc:  # noqa: BLE001 - persisted below, not swallowed silently
             job.status = ScrapeJobStatus.FAILED
@@ -64,6 +65,7 @@ async def run_scrape_job(ctx: dict[str, Any], job_id: str) -> None:
             "listings_seen": stats.listings_seen,
             "listings_created": stats.listings_created,
             "listings_updated": stats.listings_updated,
+            "listings_removed": stats.listings_removed,
             "outcome_counts": stats.outcome_counts,
         }
         job.finished_at = datetime.now(timezone.utc)

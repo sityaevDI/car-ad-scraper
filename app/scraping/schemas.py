@@ -46,6 +46,7 @@ class ScrapeJobOut(BaseModel):
 
 class ScheduledScrapeCreate(BaseModel):
     source_code: str
+    job_type: ScrapeJobType = ScrapeJobType.SEARCH
     query: SearchQuery = Field(default_factory=SearchQuery)
     max_pages: int = 5
     interval_minutes: int = Field(ge=5)
@@ -62,6 +63,7 @@ class ScheduledScrapeOut(BaseModel):
 
     id: uuid.UUID
     source_id: uuid.UUID
+    job_type: ScrapeJobType
     query: dict | None
     interval_minutes: int
     enabled: bool

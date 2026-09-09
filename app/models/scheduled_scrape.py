@@ -1,11 +1,12 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, Uuid
+from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Integer, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 from app.models.mixins import TimestampMixin, UUIDPkMixin
+from app.models.scrape_job import ScrapeJobType
 
 # A standalone admin-defined "run this query every N minutes" schedule — deliberately not tied to
 # SavedSearch/subscription plans (see docs/adr/20_ROLES_AND_ADMIN.md and issue #26, which is the
@@ -16,6 +17,9 @@ class ScheduledScrape(UUIDPkMixin, TimestampMixin, Base):
     __tablename__ = "scheduled_scrapes"
 
     source_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("sources.id"), nullable=False)
+    job_type: Mapped[ScrapeJobType] = mapped_column(
+        Enum(ScrapeJobType, native_enum=False, length=32), default=ScrapeJobType.SEARCH, nullable=False
+    )
     query: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     interval_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
