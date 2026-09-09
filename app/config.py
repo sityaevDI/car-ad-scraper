@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     csrf_cookie_name: str = "csrf_token"
     csrf_header_name: str = "X-CSRF-Token"
     cookie_secure: bool = False
+    # Set to a parent domain (e.g. ".carradar.rs") when the frontend and API live on different
+    # subdomains, so the browser shares auth cookies between them. Unset -> host-only cookies,
+    # which only work when frontend and API share the exact same hostname.
+    cookie_domain: str | None = None
     session_ttl_seconds: int = 60 * 60 * 24 * 14
     email_verification_ttl_seconds: int = 60 * 60 * 24
     password_reset_ttl_seconds: int = 60 * 30

@@ -40,6 +40,7 @@ def _set_auth_cookies(response: Response, session_id: str) -> None:
         session_id,
         max_age=settings.session_ttl_seconds,
         path="/",
+        domain=settings.cookie_domain,
         secure=settings.cookie_secure,
         httponly=True,
         samesite="lax",
@@ -50,6 +51,7 @@ def _set_auth_cookies(response: Response, session_id: str) -> None:
         csrf_token,
         max_age=settings.session_ttl_seconds,
         path="/",
+        domain=settings.cookie_domain,
         secure=settings.cookie_secure,
         httponly=False,
         samesite="lax",
@@ -58,8 +60,8 @@ def _set_auth_cookies(response: Response, session_id: str) -> None:
 
 def _clear_auth_cookies(response: Response) -> None:
     settings = get_settings()
-    response.delete_cookie(settings.session_cookie_name, path="/")
-    response.delete_cookie(settings.csrf_cookie_name, path="/")
+    response.delete_cookie(settings.session_cookie_name, path="/", domain=settings.cookie_domain)
+    response.delete_cookie(settings.csrf_cookie_name, path="/", domain=settings.cookie_domain)
 
 
 @router.post("/register", response_model=UserOut, status_code=201)
