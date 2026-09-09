@@ -1,12 +1,15 @@
 import { Route, Routes } from 'react-router-dom'
 import { RequireAdmin } from './admin/RequireAdmin'
+import { RequireAuth } from './auth/RequireAuth'
 import { Layout } from './components/Layout'
 import { AdminJobsPage } from './pages/AdminJobsPage'
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage'
 import { ListingDetailPage } from './pages/ListingDetailPage'
 import { LoginPage } from './pages/LoginPage'
+import { NotificationsPage } from './pages/NotificationsPage'
 import { RegisterPage } from './pages/RegisterPage'
 import { ResetPasswordPage } from './pages/ResetPasswordPage'
+import { SavedSearchesPage } from './pages/SavedSearchesPage'
 import { SearchPage } from './pages/SearchPage'
 import { VerifyEmailPage } from './pages/VerifyEmailPage'
 
@@ -16,6 +19,10 @@ export function App() {
       <Route element={<Layout />}>
         <Route path="/" element={<SearchPage />} />
         <Route path="/listings/:id" element={<ListingDetailPage />} />
+        <Route element={<RequireAuth />}>
+          <Route path="/saved-searches" element={<SavedSearchesPage />} />
+          <Route path="/notifications" element={<NotificationsPage />} />
+        </Route>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />

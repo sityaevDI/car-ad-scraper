@@ -1,5 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { useCurrentUser } from '../auth/useCurrentUser'
 import { ErrorState } from '../components/StateMessage'
 import { StatusBadge } from '../components/StatusBadge'
 import { ApiError } from '../lib/client'
@@ -27,12 +29,29 @@ function Field({ label, value }: { label: string; value: string }) {
 
 export function ListingDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const { user } = useCurrentUser()
+  const [isTogglingFollow, setIsTogglingFollow] = useState(false)
 
   const query = useQuery({
     queryKey: ['listing-history', id],
     queryFn: () => listingsApi.getHistory(id!),
     enabled: Boolean(id),
   })
+
+  async function handleToggleFollow() {
+    if (!id || !query.data) return
+    setIsTogglingFollow(true)
+    try {
+      if (query.data.listing.is_following) {
+        await listingsApi.unfollow(id)
+      } else {
+        await listingsApi.follow(id)
+      }
+      await query.refetch()
+    } finally {
+      setIsTogglingFollow(false)
+    }
+  }
 
   if (query.isLoading) {
     return <div className="h-96 animate-pulse rounded-lg border border-slate-200 bg-slate-100" />
@@ -77,7 +96,23 @@ export function ListingDetailPage() {
           <div className="flex-1">
             <div className="flex items-start justify-between gap-3">
               <h1 className="text-lg font-semibold text-slate-900">{listing.title}</h1>
-              <StatusBadge status={listing.status} />
+              <div className="flex shrink-0 items-center gap-2">
+                <StatusBadge status={listing.status} />
+                {user && (
+                  <button
+                    type="button"
+                    onClick={handleToggleFollow}
+                    disabled={isTogglingFollow}
+                    className={
+                      listing.is_following
+                        ? 'rounded-md border border-slate-300 bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200 disabled:opacity-50'
+                        : 'rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700 disabled:opacity-50'
+                    }
+                  >
+                    {listing.is_following ? 'Отслеживается ✓' : 'Отслеживать цену'}
+                  </button>
+                )}
+              </div>
             </div>
             <p className="mt-1 text-2xl font-bold text-slate-900">{formatPrice(listing.price, listing.currency)}</p>
 

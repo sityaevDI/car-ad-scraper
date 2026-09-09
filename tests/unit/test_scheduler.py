@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -5,10 +6,11 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
+from app.models.saved_search import SavedSearch
 from app.models.scheduled_scrape import ScheduledScrape
-from app.models.scrape_job import ScrapeJob, ScrapeJobStatus
+from app.models.scrape_job import ScrapeJob, ScrapeJobStatus, ScrapeJobType
 from app.models.source import Source
-from app.scraping.scheduler import run_due_scheduled_scrapes
+from app.scraping.scheduler import run_due_saved_search_scrapes, run_due_scheduled_scrapes
 
 
 @pytest.fixture
@@ -92,6 +94,80 @@ async def test_skips_schedule_not_yet_due(session_factory):
     async with session_factory() as session:
         jobs = (await session.execute(ScrapeJob.__table__.select())).fetchall()
         assert jobs == []
+
+
+async def _seed_saved_search(factory, user_id=None, last_run_at=None, enabled=True, query=None) -> uuid.UUID:
+    async with factory() as session:
+        saved_search = SavedSearch(
+            user_id=user_id or uuid.uuid4(),
+            name="Skoda search",
+            query=query or {"make": "Skoda"},
+            enabled=enabled,
+            last_run_at=last_run_at,
+        )
+        session.add(saved_search)
+        await session.commit()
+        return saved_search.id
+
+
+async def test_saved_search_scheduler_creates_job_for_never_run_search(session_factory):
+    source_id = await _seed_source(session_factory)
+    saved_search_id = await _seed_saved_search(session_factory, last_run_at=None)
+    redis = RecordingRedis()
+
+    await run_due_saved_search_scrapes({"session_factory": session_factory, "redis": redis})
+
+    async with session_factory() as session:
+        jobs = (await session.execute(ScrapeJob.__table__.select())).fetchall()
+        assert len(jobs) == 1
+        assert jobs[0].source_id == source_id
+        assert jobs[0].job_type == ScrapeJobType.SAVED_SEARCH_REFRESH
+        assert jobs[0].query["search_query"]["make"] == "Skoda"
+        assert jobs[0].query["max_pages"] == 5
+
+        saved_search = await session.get(SavedSearch, saved_search_id)
+        assert saved_search.last_run_at is not None
+
+    assert len(redis.enqueued) == 1
+    assert redis.enqueued[0][0] == "run_scrape_job"
+
+
+async def test_saved_search_scheduler_skips_recently_run_search(session_factory):
+    await _seed_source(session_factory)
+    recent = datetime.now(timezone.utc) - timedelta(minutes=5)
+    await _seed_saved_search(session_factory, last_run_at=recent)
+    redis = RecordingRedis()
+
+    await run_due_saved_search_scrapes({"session_factory": session_factory, "redis": redis})
+
+    assert redis.enqueued == []
+    async with session_factory() as session:
+        jobs = (await session.execute(ScrapeJob.__table__.select())).fetchall()
+        assert jobs == []
+
+
+async def test_saved_search_scheduler_skips_disabled_search(session_factory):
+    await _seed_source(session_factory)
+    stale = datetime.now(timezone.utc) - timedelta(hours=2)
+    await _seed_saved_search(session_factory, last_run_at=stale, enabled=False)
+    redis = RecordingRedis()
+
+    await run_due_saved_search_scrapes({"session_factory": session_factory, "redis": redis})
+
+    assert redis.enqueued == []
+
+
+async def test_saved_search_scheduler_creates_one_job_per_source(session_factory):
+    await _seed_source(session_factory)
+    async with session_factory() as session:
+        session.add(Source(code="mojauto", name="Moj Auto", domain="mojauto.rs", country="RS"))
+        await session.commit()
+    await _seed_saved_search(session_factory, last_run_at=None)
+    redis = RecordingRedis()
+
+    await run_due_saved_search_scrapes({"session_factory": session_factory, "redis": redis})
+
+    assert len(redis.enqueued) == 2
 
 
 async def test_skips_disabled_schedule(session_factory):

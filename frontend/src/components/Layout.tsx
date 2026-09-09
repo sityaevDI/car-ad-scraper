@@ -1,13 +1,23 @@
+import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, Outlet, useNavigate } from 'react-router-dom'
 import { useCurrentUser, useInvalidateCurrentUser } from '../auth/useCurrentUser'
 import { authApi } from '../lib/api'
+import { notificationsApi } from '../lib/notifications'
 
 export function Layout() {
   const { user, isLoading } = useCurrentUser()
   const invalidateCurrentUser = useInvalidateCurrentUser()
   const navigate = useNavigate()
   const [isLoggingOut, setIsLoggingOut] = useState(false)
+
+  const notificationsQuery = useQuery({
+    queryKey: ['notifications'],
+    queryFn: notificationsApi.list,
+    enabled: Boolean(user),
+    refetchInterval: 60_000,
+  })
+  const unreadCount = notificationsQuery.data?.unread_count ?? 0
 
   async function handleLogout() {
     setIsLoggingOut(true)
@@ -30,6 +40,17 @@ export function Layout() {
           <nav className="flex items-center gap-4 text-sm">
             {isLoading ? null : user ? (
               <>
+                <Link to="/saved-searches" className="font-medium text-slate-700 hover:text-slate-900">
+                  Мои поиски
+                </Link>
+                <Link to="/notifications" className="relative font-medium text-slate-700 hover:text-slate-900">
+                  Уведомления
+                  {unreadCount > 0 && (
+                    <span className="ml-1 rounded-full bg-red-600 px-1.5 py-0.5 text-xs font-semibold text-white">
+                      {unreadCount}
+                    </span>
+                  )}
+                </Link>
                 {user.role === 'admin' && (
                   <Link to="/admin/jobs" className="font-medium text-slate-700 hover:text-slate-900">
                     Задачи парсинга

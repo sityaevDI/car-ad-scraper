@@ -24,5 +24,9 @@ class Notification(UUIDPkMixin, TimestampMixin, Base):
 
     user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False, index=True)
     type: Mapped[NotificationType] = mapped_column(Enum(NotificationType, native_enum=False, length=32), nullable=False)
+    # Set for listing-scoped events (NEW_MATCH/PRICE_DROP/LISTING_REMOVED); backs the send cooldown
+    # in app/notifications/service.py and lets the UI link straight to the listing. MARKET_CHANGE
+    # (a market-segment event, not one listing) is expected to leave this null.
+    listing_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("listings.id"), nullable=True, index=True)
     payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -1,10 +1,15 @@
 import uuid
+from datetime import datetime, timezone
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
+from app.models.follow import Follow
+from app.models.listing import Listing, ListingStatus
+from app.models.notification import Notification, NotificationType
 from app.models.scrape_job import ScrapeJob, ScrapeJobStatus, ScrapeJobType
 from app.models.source import Source
 from app.scraping import worker as worker_module
@@ -120,6 +125,62 @@ async def test_run_scrape_job_passes_stored_query_and_max_pages_to_run_scrape(wo
     assert received["source_code"] == "polovniautomobili"
     assert received["query"].make == "Audi"
     assert received["max_pages"] == 2
+
+
+class RecordingRedis:
+    def __init__(self):
+        self.enqueued: list[tuple[str, tuple]] = []
+
+    async def enqueue_job(self, function: str, *args) -> None:
+        self.enqueued.append((function, args))
+
+
+async def test_run_scrape_job_generates_and_enqueues_notification_for_price_drop(worker_session_factory, monkeypatch):
+    job_id = await _seed_job(worker_session_factory)
+    now = datetime.now(timezone.utc)
+
+    async with worker_session_factory() as session:
+        source = (await session.execute(Source.__table__.select())).first()
+        listing = Listing(
+            source_id=source.id,
+            external_id="1",
+            canonical_url="https://x.rs/1",
+            title="Skoda Octavia",
+            make="Skoda",
+            model="Octavia",
+            production_year=2019,
+            mileage_km=100_000,
+            price=10_000,
+            currency="EUR",
+            status=ListingStatus.ACTIVE,
+            first_seen_at=now,
+            last_seen_at=now,
+            last_checked_at=now,
+        )
+        session.add(listing)
+        await session.flush()
+        follower_id = uuid.uuid4()
+        session.add(Follow(user_id=follower_id, listing_id=listing.id))
+        await session.commit()
+        listing_id = listing.id
+
+    async def fake_run_scrape(session, source_code, query, max_pages=5, proxy_provider=None):
+        return ScrapeStats(listings_seen=1, listings_updated=1, price_drops=[(listing_id, 12_000, 10_000)])
+
+    monkeypatch.setattr(worker_module, "run_scrape", fake_run_scrape)
+
+    redis = RecordingRedis()
+    ctx = {"session_factory": worker_session_factory, "proxy_provider": NullProxyProvider(), "redis": redis}
+    await worker_module.run_scrape_job(ctx, str(job_id))
+
+    async with worker_session_factory() as session:
+        notifications = (await session.execute(select(Notification))).scalars().all()
+        assert len(notifications) == 1
+        assert notifications[0].user_id == follower_id
+        assert notifications[0].type == NotificationType.PRICE_DROP
+
+    assert len(redis.enqueued) == 1
+    assert redis.enqueued[0][0] == "send_notification_email"
 
 
 async def test_run_scrape_job_skips_already_cancelled_job(worker_session_factory, monkeypatch):
