@@ -24,15 +24,23 @@ def _saved_search_url(saved_search_id: str | None) -> str:
     return f"{get_settings().frontend_base_url}/saved-searches/{saved_search_id}"
 
 
-def _new_listings_phrase(count: int) -> str:
-    """Russian noun/adjective agreement for "N new listings": 1 новое объявление, 2-4 новых
-    объявления, 5+ (and the -11..-14 teens exception) новых объявлений.
+def _listings_noun(count: int) -> str:
+    """Russian noun plural forms: 1 объявление, 2-4 объявления, 5+ (and the -11..-14 teens
+    exception) объявлений.
     """
     if count % 10 == 1 and count % 100 != 11:
-        return f"{count} новое объявление"
+        return "объявление"
     if 2 <= count % 10 <= 4 and not (12 <= count % 100 <= 14):
-        return f"{count} новых объявления"
-    return f"{count} новых объявлений"
+        return "объявления"
+    return "объявлений"
+
+
+def _new_listings_phrase(count: int) -> str:
+    """Russian adjective agreement on top of _listings_noun: "N новое объявление"/"N новых
+    объявления"/"N новых объявлений".
+    """
+    adjective = "новое" if count % 10 == 1 and count % 100 != 11 else "новых"
+    return f"{count} {adjective} {_listings_noun(count)}"
 
 
 def render_notification(notification: Notification) -> tuple[str, str]:
@@ -41,12 +49,21 @@ def render_notification(notification: Notification) -> tuple[str, str]:
 
     if notification.type == NotificationType.NEW_MATCH:
         name = payload.get("saved_search_name", "Сохранённый поиск")
-        count = payload.get("new_listings_count", 0)
+        new_count = payload.get("new_listings_count", 0)
+        updated_count = payload.get("updated_listings_count", 0)
         description = payload.get("query_description", "")
         search_url = _saved_search_url(payload.get("saved_search_id"))
-        phrase = _new_listings_phrase(count)
-        subject = f"«{name}»: {phrase}"
-        body = f"По вашему поиску «{name}» ({description}) появилось: {phrase}.\n\nСмотреть: {search_url}"
+
+        if new_count:
+            subject = f"«{name}»: {_new_listings_phrase(new_count)}"
+        else:
+            subject = f"«{name}»: обновлено {updated_count} {_listings_noun(updated_count)}"
+
+        lines = [f"По вашему поиску «{name}» ({description}):", f"Новых объявлений: {new_count}"]
+        if updated_count:
+            lines.append(f"Обновлено объявлений: {updated_count}")
+        lines += ["", f"Смотреть: {search_url}"]
+        body = "\n".join(lines)
         return subject, body
 
     if notification.type == NotificationType.PRICE_DROP:

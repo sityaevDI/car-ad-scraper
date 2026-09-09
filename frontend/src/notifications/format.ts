@@ -30,8 +30,11 @@ export function notificationDescription(notification: NotificationOut): string {
   switch (notification.type) {
     case 'new_match': {
       const count = typeof payload.new_listings_count === 'number' ? payload.new_listings_count : 0
+      const updatedCount = typeof payload.updated_listings_count === 'number' ? payload.updated_listings_count : 0
       const description = typeof payload.query_description === 'string' ? payload.query_description : ''
-      return `${count} ${pluralizeListings(count)}${description ? ` — ${description}` : ''}`
+      const parts = [`${count} новых ${pluralizeListings(count)}`]
+      if (updatedCount > 0) parts.push(`${updatedCount} обновилось`)
+      return `${parts.join(', ')}${description ? ` — ${description}` : ''}`
     }
     case 'price_drop':
       return title

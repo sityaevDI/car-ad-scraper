@@ -63,6 +63,47 @@ def test_render_new_match_agrees_singular_plural_forms():
     assert "21 новое объявление" in subject_for(21)
 
 
+def test_render_new_match_includes_updated_count_in_body():
+    notification = Notification(
+        type=NotificationType.NEW_MATCH,
+        payload={
+            "saved_search_name": "Skoda всех годов",
+            "new_listings_count": 2,
+            "updated_listings_count": 5,
+            "query_description": "Skoda",
+        },
+    )
+    subject, body = render_notification(notification)
+    assert "2 новых объявления" in subject
+    assert "Новых объявлений: 2" in body
+    assert "Обновлено объявлений: 5" in body
+
+
+def test_render_new_match_with_only_updates_no_new_listings():
+    notification = Notification(
+        type=NotificationType.NEW_MATCH,
+        payload={
+            "saved_search_name": "Skoda всех годов",
+            "new_listings_count": 0,
+            "updated_listings_count": 4,
+            "query_description": "Skoda",
+        },
+    )
+    subject, body = render_notification(notification)
+    assert "обновлено 4 объявления" in subject
+    assert "Новых объявлений: 0" in body
+    assert "Обновлено объявлений: 4" in body
+
+
+def test_render_new_match_omits_updated_line_when_nothing_updated():
+    notification = Notification(
+        type=NotificationType.NEW_MATCH,
+        payload={"saved_search_name": "X", "new_listings_count": 1, "query_description": ""},
+    )
+    _, body = render_notification(notification)
+    assert "Обновлено" not in body
+
+
 def test_render_price_drop_shows_before_and_after():
     notification = Notification(
         type=NotificationType.PRICE_DROP,

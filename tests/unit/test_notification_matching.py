@@ -154,6 +154,57 @@ async def test_new_match_creates_one_aggregated_notification_for_multiple_new_li
         assert notifications[0].payload["new_listings_count"] == 2
 
 
+async def test_new_match_includes_updated_count(session_factory):
+    async with session_factory() as session:
+        source_id, listing_id = await _seed_source_and_listing(session)
+        user_id = uuid.uuid4()
+        query = SearchQuery(make="Skoda")
+        session.add(SavedSearch(user_id=user_id, name="Skoda alert", query=query.model_dump(), enabled=True))
+        job = ScrapeJob(
+            source_id=source_id,
+            job_type=ScrapeJobType.SAVED_SEARCH_REFRESH,
+            status=ScrapeJobStatus.RUNNING,
+            query=encode_job_query(query, max_pages=5),
+        )
+        session.add(job)
+        await session.commit()
+
+        stats = ScrapeStats(new_listing_ids=[listing_id], listings_updated=3)
+        await generate_notifications_for_job(session, job, stats)
+        await session.commit()
+
+        notifications = (await session.execute(select(Notification))).scalars().all()
+        assert len(notifications) == 1
+        assert notifications[0].payload["new_listings_count"] == 1
+        assert notifications[0].payload["updated_listings_count"] == 3
+
+
+async def test_new_match_fires_on_updates_alone(session_factory):
+    async with session_factory() as session:
+        source_id, _ = await _seed_source_and_listing(session)
+        user_id = uuid.uuid4()
+        query = SearchQuery(make="Skoda")
+        session.add(SavedSearch(user_id=user_id, name="Skoda alert", query=query.model_dump(), enabled=True))
+        job = ScrapeJob(
+            source_id=source_id,
+            job_type=ScrapeJobType.SAVED_SEARCH_REFRESH,
+            status=ScrapeJobStatus.RUNNING,
+            query=encode_job_query(query, max_pages=5),
+        )
+        session.add(job)
+        await session.commit()
+
+        # No new_listing_ids at all — only existing listings changed price/mileage/title.
+        stats = ScrapeStats(listings_updated=2)
+        await generate_notifications_for_job(session, job, stats)
+        await session.commit()
+
+        notifications = (await session.execute(select(Notification))).scalars().all()
+        assert len(notifications) == 1
+        assert notifications[0].payload["new_listings_count"] == 0
+        assert notifications[0].payload["updated_listings_count"] == 2
+
+
 async def test_new_match_ignores_non_matching_saved_search(session_factory):
     async with session_factory() as session:
         source_id, listing_id = await _seed_source_and_listing(session)
