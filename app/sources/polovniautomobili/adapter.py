@@ -9,6 +9,7 @@ from collections.abc import AsyncIterator, Callable
 from typing import TypeVar
 from urllib.parse import urlencode
 
+from app.config import get_settings
 from app.scraping.fetch_outcome import FetchOutcome, ParserError
 from app.scraping.fetch_strategy import FetchStrategy, ProxyHttpFetcher, raise_for_blocked
 from app.scraping.proxy import ProxyProvider, get_proxy_provider
@@ -47,12 +48,19 @@ class PolovniAutomobiliSource:
         self.timeout = timeout
         self.max_pages = max_pages
         self._outcome_sink = outcome_sink
-        self.fetcher = fetcher if fetcher is not None else ProxyHttpFetcher(
-            source=self.source_code,
-            proxy_provider=proxy_provider if proxy_provider is not None else get_proxy_provider(),
-            timeout=timeout,
-            outcome_sink=outcome_sink,
-        )
+        if fetcher is not None:
+            self.fetcher = fetcher
+        else:
+            settings = get_settings()
+            self.fetcher = ProxyHttpFetcher(
+                source=self.source_code,
+                proxy_provider=proxy_provider if proxy_provider is not None else get_proxy_provider(),
+                timeout=timeout,
+                outcome_sink=outcome_sink,
+                delay=settings.scrape_request_delay_seconds,
+                jitter=settings.scrape_request_jitter_seconds,
+                network_error_retry_delay=settings.scrape_network_error_retry_delay_seconds,
+            )
 
     def build_search_url(self, query: SearchQuery, page: int = 1) -> str:
         params: list[tuple[str, str]] = [("page", str(page)), ("sort", "basic")]

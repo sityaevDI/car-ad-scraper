@@ -77,6 +77,17 @@ def test_parse_listing_extracts_full_detail():
     assert listing.image_url == "https://cdn.polovniautomobili.com/user-images/thumbs/3013/30136732/0d3bcb74b14a.jpg"
 
 
+def test_fetcher_is_configured_from_settings():
+    from app.config import get_settings
+
+    adapter = PolovniAutomobiliSource()
+    settings = get_settings()
+
+    assert adapter.fetcher._pacer.delay == settings.scrape_request_delay_seconds
+    assert adapter.fetcher._pacer.jitter == settings.scrape_request_jitter_seconds
+    assert adapter.fetcher.network_error_retry_delay == settings.scrape_network_error_retry_delay_seconds
+
+
 def test_build_search_url_includes_filters():
     from app.search.query import SearchQuery
 
