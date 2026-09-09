@@ -1,6 +1,7 @@
 import logging
 import random
 import re
+import sys
 from urllib.parse import urlparse
 
 import brotli
@@ -8,9 +9,10 @@ from bs4 import Tag, BeautifulSoup
 
 logger = logging.getLogger("scraper")
 logger.setLevel(logging.INFO)
+logger.propagate = False
 
 if not logger.hasHandlers():
-    handler = logging.StreamHandler()
+    handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(logging.Formatter(fmt='%(asctime)s %(levelname)s %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
     handler.setLevel(logging.INFO)
     logger.addHandler(handler)
