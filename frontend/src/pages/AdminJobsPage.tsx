@@ -60,7 +60,16 @@ function describeJobStats(stats: Record<string, unknown> | null): string {
   const created = s.listings_created ?? 0
   const updated = s.listings_updated ?? 0
   const removed = s.listings_removed ?? 0
-  return `всего ${seen}, новых ${created}, обновлено ${updated}, удалено ${removed}`
+  const parts = [`всего ${seen}, новых ${created}, обновлено ${updated}, удалено ${removed}`]
+
+  const outcomes = Object.entries(s.outcome_counts ?? {}).filter(([, count]) => count > 0)
+  if (outcomes.length > 0) {
+    parts.push(outcomes.map(([outcome, count]) => `${outcome}: ${count}`).join(', '))
+  }
+  if (s.error_detail) {
+    parts.push(s.error_detail)
+  }
+  return parts.join(' — ')
 }
 
 export function AdminJobsPage() {

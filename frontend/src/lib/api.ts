@@ -68,6 +68,7 @@ export interface ScrapeJobStats {
   listings_updated?: number
   listings_removed?: number
   outcome_counts?: Record<string, number>
+  error_detail?: string | null
 }
 
 export interface ListJobsFilters {

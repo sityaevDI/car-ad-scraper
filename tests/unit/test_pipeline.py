@@ -124,6 +124,7 @@ async def test_run_scrape_persists_partial_results_when_blocked_mid_crawl(sessio
     assert stats.listings_updated == 0
     assert stats.blocked is True
     assert stats.outcome_counts == {"success": 1, "forbidden": 1}
+    assert stats.error_detail == "Fetch blocked: forbidden"
 
     persisted = (await session.execute(select(Listing))).scalars().all()
     assert len(persisted) == 2
@@ -137,9 +138,54 @@ async def test_run_scrape_persists_partial_results_on_parser_error_mid_crawl(ses
     assert stats.listings_seen == 1
     assert stats.blocked is True
     assert stats.outcome_counts == {"success": 1, "parser_error": 1}
+    assert stats.error_detail == "Parser error: unexpected page shape"
 
     persisted = (await session.execute(select(Listing))).scalars().all()
     assert len(persisted) == 1
+
+
+class StubPageSkippedAdapter:
+    """Mirrors PolovniAutomobiliSource._iter_search_pages after a page fails to parse twice: it
+    records PARSER_ERROR/PAGE_SKIPPED via the outcome sink but keeps crawling and yielding
+    listings instead of raising — run_scrape should still treat the run as incomplete (skip
+    mark_removed, end up PARTIAL) without losing the listings gathered after the skipped page.
+    """
+
+    source_code = "stub_source"
+    display_name = "Stub Source"
+    domain = "stub.example.com"
+    country = "RS"
+
+    def __init__(self, max_pages=5, proxy_provider=None, outcome_sink=None):
+        self.outcome_sink = outcome_sink
+
+    async def search_with_data(self, query: SearchQuery) -> AsyncIterator[SourceListing]:
+        if self.outcome_sink:
+            self.outcome_sink(FetchOutcome.SUCCESS)
+        yield _listing("1", 10_000)
+        if self.outcome_sink:
+            self.outcome_sink(FetchOutcome.PARSER_ERROR)
+            self.outcome_sink(FetchOutcome.PARSER_ERROR)
+            self.outcome_sink(FetchOutcome.PAGE_SKIPPED)
+            self.outcome_sink(FetchOutcome.SUCCESS)
+        yield _listing("2", 12_000)
+
+
+async def test_run_scrape_marks_blocked_when_a_page_was_skipped(session, monkeypatch):
+    monkeypatch.setitem(registry.SOURCE_REGISTRY, "stub_source", StubPageSkippedAdapter)
+
+    stats = await run_scrape(session, source_code="stub_source", query=SearchQuery(), mark_removed=True)
+
+    # Unlike a hard abort, the crawl ran to completion — both listings persisted — but the run is
+    # still not a clean full pass, so it's flagged the same way as an aborted one.
+    assert stats.listings_seen == 2
+    assert stats.blocked is True
+    assert stats.listings_removed == 0
+    assert stats.error_detail is None
+    assert stats.outcome_counts["page_skipped"] == 1
+
+    persisted = (await session.execute(select(Listing))).scalars().all()
+    assert len(persisted) == 2
 
 
 async def test_run_scrape_marks_missing_listings_removed_when_mark_removed_is_true(session, monkeypatch):

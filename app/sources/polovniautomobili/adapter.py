@@ -125,12 +125,34 @@ class PolovniAutomobiliSource:
         result = await self.fetcher.fetch(url)
         return raise_for_blocked(result, url)
 
+    async def _fetch_search_page(self, url: str) -> tuple[list[SourceListing], int] | None:
+        """One fetch+parse attempt for a search page. Returns None (rather than raising) on a
+        parse failure, so `_iter_search_pages` can retry or skip the page instead of aborting the
+        whole crawl — a fetch failure (FetchBlockedError, or the RuntimeError raise_for_blocked
+        raises for TIMEOUT/SERVER_ERROR) still propagates normally, since those aren't
+        page-specific and retrying won't help.
+        """
+        html = await self._fetch(url)
+        try:
+            return self._guard_parse(self.parse_search_page, html)
+        except ParserError:
+            return None
+
     async def _iter_search_pages(self, query: SearchQuery) -> AsyncIterator[SourceListing]:
         page = 1
         while page <= self.max_pages:
             url = self.build_search_url(query, page)
-            html = await self._fetch(url)
-            listings, page_count = self._guard_parse(self.parse_search_page, html)
+            result = await self._fetch_search_page(url)
+            if result is None:
+                # One retry: a parse failure could be a transient odd response. A second
+                # consecutive failure means this page really can't be parsed — skip it and keep
+                # crawling the rest of the source rather than losing everything after it.
+                result = await self._fetch_search_page(url)
+            if result is None:
+                self._record(FetchOutcome.PAGE_SKIPPED)
+                page += 1
+                continue
+            listings, page_count = result
             for listing in listings:
                 yield listing
             if page >= page_count:

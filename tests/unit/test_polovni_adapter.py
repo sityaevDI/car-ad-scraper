@@ -6,7 +6,7 @@ import requests
 
 from app.scraping.fetch_outcome import FetchBlockedError, FetchOutcome, ParserError
 from app.scraping.proxy import FetchError, FetchMetrics, ProxyEndpoint
-from app.sources.base import SourceListingRef
+from app.sources.base import SourceListing, SourceListingRef
 from app.sources.polovniautomobili.adapter import PolovniAutomobiliSource
 
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "polovniautomobili"
@@ -189,6 +189,72 @@ async def test_fetch_records_outcomes_via_sink(monkeypatch):
     await adapter._fetch("https://example.com/search")
 
     assert outcomes == [FetchOutcome.SUCCESS]
+
+
+async def test_iter_search_pages_retries_once_then_skips_unparseable_page(monkeypatch):
+    from app.search.query import SearchQuery
+
+    outcomes: list[FetchOutcome] = []
+    adapter = PolovniAutomobiliSource(proxy_provider=FakeProxyProvider(), outcome_sink=outcomes.append, max_pages=3)
+
+    parsed_urls: list[str] = []
+
+    async def fake_fetch(url: str) -> str:
+        return url
+
+    def fake_parse(html: str) -> tuple[list, int]:
+        parsed_urls.append(html)
+        if "page=1&" in html:
+            raise ValueError("unexpected page shape")
+        return [], 2
+
+    monkeypatch.setattr(adapter, "_fetch", fake_fetch)
+    monkeypatch.setattr(adapter, "parse_search_page", fake_parse)
+
+    results = [listing async for listing in adapter.search_with_data(SearchQuery())]
+
+    assert results == []
+    # page 1: fetched and parsed twice (initial attempt + one retry), both fail and it's skipped;
+    # page 2: fetched and parsed once, succeeds with page_count=2 so the crawl stops there.
+    assert sum("page=1&" in url for url in parsed_urls) == 2
+    assert sum("page=2&" in url for url in parsed_urls) == 1
+    assert outcomes == [
+        FetchOutcome.PARSER_ERROR,
+        FetchOutcome.PARSER_ERROR,
+        FetchOutcome.PAGE_SKIPPED,
+    ]
+
+
+async def test_iter_search_pages_recovers_if_retry_parses_successfully(monkeypatch):
+    from app.search.query import SearchQuery
+
+    outcomes: list[FetchOutcome] = []
+    adapter = PolovniAutomobiliSource(proxy_provider=FakeProxyProvider(), outcome_sink=outcomes.append, max_pages=3)
+
+    attempts: dict[str, int] = {}
+    listing = SourceListing(
+        external_id="1", canonical_url="https://x/1", title="x", make="Skoda", model="Octavia",
+        production_year=2019, mileage_km=1, price=1, currency="EUR",
+    )
+
+    async def fake_fetch(url: str) -> str:
+        return url
+
+    def fake_parse(html: str) -> tuple[list, int]:
+        attempts[html] = attempts.get(html, 0) + 1
+        if attempts[html] == 1:
+            raise ValueError("transient")
+        return [listing], 1
+
+    monkeypatch.setattr(adapter, "_fetch", fake_fetch)
+    monkeypatch.setattr(adapter, "parse_search_page", fake_parse)
+
+    results = [item async for item in adapter.search_with_data(SearchQuery())]
+
+    # The retry succeeded, so the page is NOT skipped: its listing is yielded and the loop stops
+    # at page_count=1 instead of continuing — a transient failure shouldn't cost the crawl a page.
+    assert results == [listing]
+    assert outcomes == [FetchOutcome.PARSER_ERROR]
 
 
 async def test_fetch_listing_records_and_raises_parser_error_on_malformed_page(monkeypatch):
