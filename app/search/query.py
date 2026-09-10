@@ -30,6 +30,7 @@ class SearchQuery(BaseModel):
     fuel_types: list[str] | None = None
     transmissions: list[str] | None = None
     body_types: list[str] | None = None
+    equipment: list[str] | None = None
     location: str | None = None
 
     def stable_hash(self) -> str:
@@ -50,6 +51,8 @@ class SearchQuery(BaseModel):
             parts.append(f"{self.year_min or '…'}–{self.year_max or '…'}")
         if self.price_min or self.price_max:
             parts.append(f"€{self.price_min or '…'}–{self.price_max or '…'}")
+        if self.equipment:
+            parts.append(f"+{len(self.equipment)} опций")
         return ", ".join(parts) if parts else "все объявления"
 
 

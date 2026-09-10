@@ -1,6 +1,7 @@
 import type { SearchQuery } from '../lib/search'
 import { useVehicleMakes } from './useVehicleMakes'
 import { BODY_TYPE_OPTIONS, FUEL_TYPE_OPTIONS, TRANSMISSION_OPTIONS } from './constants'
+import { EquipmentFilter } from './EquipmentFilter'
 
 const inputClass =
   'w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500'
@@ -210,6 +211,11 @@ export function SearchFilters({
           onChange={(v) => onChange({ ...value, body_types: v })}
         />
       </div>
+
+      <EquipmentFilter
+        selected={value.equipment}
+        onChange={(v) => onChange({ ...value, equipment: v })}
+      />
 
       <button
         type="submit"

@@ -10,11 +10,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.listings.repository import ListingRepository
+from app.models.listing import Listing
 from app.models.source import Source
 from app.scraping.fetch_outcome import FetchBlockedError, FetchOutcome, OutcomeCounter, ParserError
 from app.scraping.proxy import ProxyProvider
 from app.search.query import SearchQuery
-from app.sources.base import CarSource, SourceListing
+from app.sources.base import CarSource, SourceListing, SourceListingRef
 from app.sources.registry import get_source_adapter
 
 
@@ -64,6 +65,21 @@ async def _search_listings(adapter: CarSource, query: SearchQuery) -> AsyncItera
         yield await adapter.fetch_listing(ref)
 
 
+async def _enrich_with_equipment(adapter: CarSource, repository: ListingRepository, listing: Listing) -> None:
+    """Search-page results don't carry `equipment` (see mapper.py's docstring on the search vs.
+    detail page JSON shapes), so a brand-new listing gets one extra detail-page fetch here to
+    backfill it. Only done once, on creation — a listing's equipment doesn't change over its
+    lifetime, so re-crawls of an already-known listing skip this and stay cheap.
+    """
+    ref = SourceListingRef(external_id=listing.external_id, url=listing.canonical_url)
+    try:
+        detail = await adapter.fetch_listing(ref)
+    except (FetchBlockedError, ParserError):
+        return
+    if detail.equipment:
+        repository.set_equipment(listing, detail.equipment)
+
+
 async def run_scrape(
     session: AsyncSession,
     source_code: str,
@@ -97,6 +113,7 @@ async def run_scrape(
             if is_new:
                 stats.listings_created += 1
                 stats.new_listing_ids.append(listing.id)
+                await _enrich_with_equipment(adapter, repository, listing)
             else:
                 stats.listings_updated += 1
                 if previous_price is not None and previous_price > listing.price:
