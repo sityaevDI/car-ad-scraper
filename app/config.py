@@ -57,8 +57,13 @@ class Settings(BaseSettings):
     # direct once (still no proxy) before falling back to the residential proxy — a connection
     # reset right after a request that just worked is as likely a transient blip as an IP block,
     # and the direct retry is free where a proxied one burns quota.
-    scrape_request_delay_seconds: float = 2.0
-    scrape_request_jitter_seconds: float = 1.0
+    #
+    # These three values only seed app/models/scrape_rate_limit.py's singleton row the first time
+    # it's read — after that, an admin can retune pacing live from the admin panel
+    # (/api/v1/scrape/rate-limit) without touching this file or redeploying. See
+    # app/scraping/rate_limit.py.
+    scrape_request_delay_seconds: float = 0.8
+    scrape_request_jitter_seconds: float = 0.4
     scrape_network_error_retry_delay_seconds: float = 5.0
 
 

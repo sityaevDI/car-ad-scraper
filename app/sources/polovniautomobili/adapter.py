@@ -44,7 +44,15 @@ class PolovniAutomobiliSource:
         proxy_provider: ProxyProvider | None = None,
         outcome_sink: Callable[[FetchOutcome], None] | None = None,
         fetcher: FetchStrategy | None = None,
+        delay: float | None = None,
+        jitter: float | None = None,
+        network_error_retry_delay: float | None = None,
     ):
+        """`delay`/`jitter`/`network_error_retry_delay` override app/config.py's
+        scrape_request_* defaults — app/scraping/pipeline.py's run_scrape passes the current
+        admin-editable values from app/scraping/rate_limit.py here. Left unset (e.g. by a direct
+        caller/test), each falls back to its Settings default.
+        """
         self.timeout = timeout
         self.max_pages = max_pages
         self._outcome_sink = outcome_sink
@@ -57,9 +65,13 @@ class PolovniAutomobiliSource:
                 proxy_provider=proxy_provider if proxy_provider is not None else get_proxy_provider(),
                 timeout=timeout,
                 outcome_sink=outcome_sink,
-                delay=settings.scrape_request_delay_seconds,
-                jitter=settings.scrape_request_jitter_seconds,
-                network_error_retry_delay=settings.scrape_network_error_retry_delay_seconds,
+                delay=delay if delay is not None else settings.scrape_request_delay_seconds,
+                jitter=jitter if jitter is not None else settings.scrape_request_jitter_seconds,
+                network_error_retry_delay=(
+                    network_error_retry_delay
+                    if network_error_retry_delay is not None
+                    else settings.scrape_network_error_retry_delay_seconds
+                ),
             )
 
     def build_search_url(self, query: SearchQuery, page: int = 1) -> str:
