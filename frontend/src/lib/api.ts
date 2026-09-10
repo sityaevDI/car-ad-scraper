@@ -55,15 +55,36 @@ export interface ScrapeJobOut {
   job_type: ScrapeJobType
   status: ScrapeJobStatus
   query: Record<string, unknown> | null
+  created_at: string
   started_at: string | null
   finished_at: string | null
   stats: Record<string, unknown> | null
   error: Record<string, unknown> | null
 }
 
+export interface ScrapeJobStats {
+  listings_seen?: number
+  listings_created?: number
+  listings_updated?: number
+  listings_removed?: number
+  outcome_counts?: Record<string, number>
+}
+
+export interface ListJobsFilters {
+  status?: ScrapeJobStatus
+  dateFrom?: string
+  dateTo?: string
+}
+
 export const scrapeApi = {
-  listJobs: (status?: ScrapeJobStatus) =>
-    apiFetch<ScrapeJobOut[]>(`/api/v1/scrape/jobs${status ? `?status=${status}` : ''}`),
+  listJobs: (filters: ListJobsFilters = {}) => {
+    const params = new URLSearchParams()
+    if (filters.status) params.set('status', filters.status)
+    if (filters.dateFrom) params.set('date_from', filters.dateFrom)
+    if (filters.dateTo) params.set('date_to', filters.dateTo)
+    const qs = params.toString()
+    return apiFetch<ScrapeJobOut[]>(`/api/v1/scrape/jobs${qs ? `?${qs}` : ''}`)
+  },
 
   createJob: (sourceCode: string, make?: string, maxPages = 5) =>
     apiFetch<ScrapeJobOut>('/api/v1/scrape/jobs', {

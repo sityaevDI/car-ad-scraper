@@ -3,18 +3,9 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ApiError } from '../lib/client'
 import { formatDate } from '../lib/format'
-import type { SearchQuery } from '../lib/search'
+import { describeQuery } from '../lib/search'
 import { savedSearchesApi } from '../lib/savedSearches'
 import { EmptyState, ErrorState, LoadingState } from '../components/StateMessage'
-
-function describeQuery(query: SearchQuery): string {
-  const parts: string[] = []
-  if (query.make) parts.push(String(query.make))
-  if (Array.isArray(query.models) && query.models.length) parts.push((query.models as string[]).join('/'))
-  if (query.year_min || query.year_max) parts.push(`${query.year_min ?? '…'}–${query.year_max ?? '…'}`)
-  if (query.price_min || query.price_max) parts.push(`€${query.price_min ?? '…'}–${query.price_max ?? '…'}`)
-  return parts.length ? parts.join(', ') : 'Все объявления'
-}
 
 export function SavedSearchesPage() {
   const [pendingId, setPendingId] = useState<string | null>(null)

@@ -20,6 +20,16 @@ export interface SearchQuery {
   location?: string
 }
 
+// Mirrors SearchQuery.describe() in app/search/query.py.
+export function describeQuery(query: SearchQuery): string {
+  const parts: string[] = []
+  if (query.make) parts.push(String(query.make))
+  if (Array.isArray(query.models) && query.models.length) parts.push((query.models as string[]).join('/'))
+  if (query.year_min || query.year_max) parts.push(`${query.year_min ?? '…'}–${query.year_max ?? '…'}`)
+  if (query.price_min || query.price_max) parts.push(`€${query.price_min ?? '…'}–${query.price_max ?? '…'}`)
+  return parts.length ? parts.join(', ') : 'Все объявления'
+}
+
 // Mirrors ALLOWED_GROUP_FIELDS in app/search/service.py.
 export type GroupField = 'make' | 'model' | 'production_year' | 'fuel_type' | 'transmission' | 'engine_volume_cc' | 'body_type'
 
