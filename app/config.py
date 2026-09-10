@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     password_reset_rate_limit_window_seconds: int = 60 * 60
     frontend_base_url: str = "http://localhost:3000"
 
+    # Stub refresh cadence for saved searches (issue #26) — real per-plan cadence
+    # (SubscriptionPlan.refresh_frequency_minutes) is Phase 5 billing, not wired up yet.
+    saved_search_refresh_minutes: int = 60
+
     # Transactional email (verification/reset links). Unset -> falls back to a logging-only
     # sender, so local dev/CI never need real credentials. See app/auth/email.py.
     resend_api_key: str | None = None

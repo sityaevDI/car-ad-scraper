@@ -31,6 +31,9 @@ class ListingOut(BaseModel):
     first_seen_at: datetime
     last_seen_at: datetime
     last_checked_at: datetime
+    # Set by the route for a logged-in caller (app/listings/repository.py::FollowRepository),
+    # never derived from the Listing row itself.
+    is_following: bool = False
 
 
 class ListingSnapshotOut(BaseModel):

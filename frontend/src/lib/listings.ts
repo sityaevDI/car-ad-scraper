@@ -25,6 +25,7 @@ export interface ListingOut {
   first_seen_at: string
   last_seen_at: string
   last_checked_at: string
+  is_following: boolean
 }
 
 export interface ListingSnapshotOut {
@@ -43,4 +44,6 @@ export interface ListingHistoryOut {
 export const listingsApi = {
   get: (id: string) => apiFetch<ListingOut>(`/api/v1/listings/${id}`),
   getHistory: (id: string) => apiFetch<ListingHistoryOut>(`/api/v1/listings/${id}/history`),
+  follow: (id: string) => apiFetch<void>(`/api/v1/listings/${id}/follow`, { method: 'POST' }),
+  unfollow: (id: string) => apiFetch<void>(`/api/v1/listings/${id}/follow`, { method: 'DELETE' }),
 }

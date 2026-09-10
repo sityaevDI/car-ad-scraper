@@ -37,6 +37,20 @@ async def get_current_user(
     return user
 
 
+async def get_current_user_optional(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    redis: Redis = Depends(get_redis),
+) -> User | None:
+    """Same lookup as get_current_user, but returns None instead of raising — for routes that
+    render differently for a logged-in user (e.g. an is_following flag) without requiring auth.
+    """
+    try:
+        return await get_current_user(request, session, redis)
+    except HTTPException:
+        return None
+
+
 async def require_admin(current_user: User = Depends(get_current_user)) -> User:
     if current_user.role != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Admin access required")
