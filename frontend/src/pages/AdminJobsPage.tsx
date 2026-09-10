@@ -189,7 +189,6 @@ export function AdminJobsPage() {
               id="job-max-pages"
               type="number"
               min={1}
-              max={50}
               value={maxPages}
               onChange={(e) => setMaxPages(Number(e.target.value))}
               className="w-24 rounded-md border border-slate-300 px-3 py-1.5 text-sm"
@@ -325,7 +324,6 @@ export function AdminJobsPage() {
                 id="schedule-max-pages"
                 type="number"
                 min={1}
-                max={50}
                 value={scheduleMaxPages}
                 onChange={(e) => setScheduleMaxPages(Number(e.target.value))}
                 className="w-24 rounded-md border border-slate-300 px-3 py-1.5 text-sm"
