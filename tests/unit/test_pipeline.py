@@ -6,7 +6,7 @@ import app.sources.registry as registry
 from app.models.listing import Listing, ListingStatus
 from app.models.scrape_rate_limit import ScrapeRateLimit
 from app.scraping.fetch_outcome import FetchBlockedError, FetchOutcome, ParserError
-from app.scraping.pipeline import run_scrape
+from app.scraping.pipeline import _COMMIT_BATCH_SIZE, run_scrape
 from app.search.query import SearchQuery
 from app.sources.base import SourceListing, SourceListingRef
 
@@ -273,3 +273,32 @@ async def test_run_scrape_passes_admin_configured_rate_limit_to_adapter(session,
     assert received_kwargs["delay"] == 0.11
     assert received_kwargs["jitter"] == 0.05
     assert received_kwargs["network_error_retry_delay"] == 1.5
+
+
+async def test_run_scrape_commits_periodically_during_a_long_crawl(session, monkeypatch):
+    """A long crawl shouldn't hold everything in one uncommitted transaction until the very end —
+    see the module docstring on _COMMIT_BATCH_SIZE for why (long-held row locks, and losing an
+    entire run's work to an exception the caller doesn't treat as partial-success).
+    """
+    external_ids = [str(i) for i in range(_COMMIT_BATCH_SIZE * 2 + 3)]
+    monkeypatch.setitem(registry.SOURCE_REGISTRY, "stub_source", _make_stub_adapter(external_ids))
+
+    commit_count = 0
+    original_commit = session.commit
+
+    async def _counting_commit():
+        nonlocal commit_count
+        commit_count += 1
+        await original_commit()
+
+    monkeypatch.setattr(session, "commit", _counting_commit)
+
+    stats = await run_scrape(session, source_code="stub_source", query=SearchQuery())
+
+    assert stats.listings_created == len(external_ids)
+    # Two mid-crawl commits (at _COMMIT_BATCH_SIZE and 2 * _COMMIT_BATCH_SIZE listings seen) plus
+    # the final commit at the end of run_scrape.
+    assert commit_count == 3
+
+    persisted = (await session.execute(select(Listing))).scalars().all()
+    assert len(persisted) == len(external_ids)

@@ -19,6 +19,13 @@ from app.search.query import SearchQuery
 from app.sources.base import CarSource, SourceListing, SourceListingRef
 from app.sources.registry import get_source_adapter
 
+# Commit every N upserted listings instead of once at the end of the whole crawl. A full crawl can
+# span many minutes of network I/O (page fetches, per-listing detail fetches); holding one
+# transaction open across all of it holds row locks on every updated Listing for the run's entire
+# duration and loses all already-scraped work if something later in the run raises an exception
+# the caller doesn't treat as a partial-success case (see app/scraping/worker.py's except clause).
+_COMMIT_BATCH_SIZE = 50
+
 
 @dataclass
 class ScrapeStats:
@@ -129,6 +136,9 @@ async def run_scrape(
                 stats.listings_updated += 1
                 if previous_price is not None and previous_price > listing.price:
                     stats.price_drops.append((listing.id, previous_price, listing.price))
+
+            if stats.listings_seen % _COMMIT_BATCH_SIZE == 0:
+                await session.commit()
     except (FetchBlockedError, ParserError) as exc:
         # Stop pagination early but keep whatever was already upserted this run — a partial
         # result is more useful than losing it. FetchBlockedError means the source just told us
