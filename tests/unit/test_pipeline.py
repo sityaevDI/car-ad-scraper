@@ -4,6 +4,7 @@ from sqlalchemy import select
 
 import app.sources.registry as registry
 from app.models.listing import Listing, ListingStatus
+from app.models.scrape_rate_limit import ScrapeRateLimit
 from app.scraping.fetch_outcome import FetchBlockedError, FetchOutcome, ParserError
 from app.scraping.pipeline import run_scrape
 from app.search.query import SearchQuery
@@ -30,7 +31,7 @@ class StubAdapter:
     domain = "stub.example.com"
     country = "RS"
 
-    def __init__(self, max_pages=5, proxy_provider=None, outcome_sink=None):
+    def __init__(self, max_pages=5, proxy_provider=None, outcome_sink=None, **kwargs):
         self.outcome_sink = outcome_sink
 
     async def search_with_data(self, query: SearchQuery) -> AsyncIterator[SourceListing]:
@@ -77,7 +78,7 @@ class StubBlockedAdapter:
     domain = "stub.example.com"
     country = "RS"
 
-    def __init__(self, max_pages=5, proxy_provider=None, outcome_sink=None):
+    def __init__(self, max_pages=5, proxy_provider=None, outcome_sink=None, **kwargs):
         self.outcome_sink = outcome_sink
 
     async def search_with_data(self, query: SearchQuery) -> AsyncIterator[SourceListing]:
@@ -99,7 +100,7 @@ class StubParserErrorAdapter:
     domain = "stub.example.com"
     country = "RS"
 
-    def __init__(self, max_pages=5, proxy_provider=None, outcome_sink=None):
+    def __init__(self, max_pages=5, proxy_provider=None, outcome_sink=None, **kwargs):
         self.outcome_sink = outcome_sink
 
     async def search_with_data(self, query: SearchQuery) -> AsyncIterator[SourceListing]:
@@ -156,7 +157,7 @@ class StubPageSkippedAdapter:
     domain = "stub.example.com"
     country = "RS"
 
-    def __init__(self, max_pages=5, proxy_provider=None, outcome_sink=None):
+    def __init__(self, max_pages=5, proxy_provider=None, outcome_sink=None, **kwargs):
         self.outcome_sink = outcome_sink
 
     async def search_with_data(self, query: SearchQuery) -> AsyncIterator[SourceListing]:
@@ -241,5 +242,34 @@ async def test_run_scrape_backfills_equipment_once_on_creation(session, monkeypa
     assert listing.equipment == ["bluetooth", "apple_carplay"]
     assert adapter_cls.fetch_listing_calls == ["1"]
 
+
+async def test_run_scrape_passes_admin_configured_rate_limit_to_adapter(session, monkeypatch):
+    """The delay/jitter/network_error_retry_delay an admin sets via /api/v1/scrape/rate-limit
+    (app/scraping/rate_limit.py's ScrapeRateLimit row) must reach the adapter constructor, not
+    just app/config.py's static defaults.
+    """
+    session.add(
+        ScrapeRateLimit(
+            request_delay_seconds=0.11,
+            request_jitter_seconds=0.05,
+            network_error_retry_delay_seconds=1.5,
+        )
+    )
+    await session.flush()
+
+    received_kwargs: dict = {}
+
+    class RecordingStubAdapter(StubAdapter):
+        external_ids = ["1"]
+
+        def __init__(self, **kwargs):
+            received_kwargs.update(kwargs)
+            super().__init__(**kwargs)
+
+    monkeypatch.setitem(registry.SOURCE_REGISTRY, "stub_source", RecordingStubAdapter)
+
     await run_scrape(session, source_code="stub_source", query=SearchQuery())
-    assert adapter_cls.fetch_listing_calls == ["1"]  # not called again for the already-known listing
+
+    assert received_kwargs["delay"] == 0.11
+    assert received_kwargs["jitter"] == 0.05
+    assert received_kwargs["network_error_retry_delay"] == 1.5

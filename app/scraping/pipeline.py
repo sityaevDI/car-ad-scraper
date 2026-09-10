@@ -14,6 +14,7 @@ from app.models.listing import Listing
 from app.models.source import Source
 from app.scraping.fetch_outcome import FetchBlockedError, FetchOutcome, OutcomeCounter, ParserError
 from app.scraping.proxy import ProxyProvider
+from app.scraping.rate_limit import get_scrape_rate_limit
 from app.search.query import SearchQuery
 from app.sources.base import CarSource, SourceListing, SourceListingRef
 from app.sources.registry import get_source_adapter
@@ -96,8 +97,18 @@ async def run_scrape(
     tell a genuinely removed listing from one it just didn't get to yet.
     """
     counter = OutcomeCounter()
+    rate_limit = await get_scrape_rate_limit(session)
+    # delay/jitter/network_error_retry_delay are adapter-specific kwargs only PolovniAutomobiliSource
+    # accepts today (see its __init__ docstring) — fine while it's the only registered source, but
+    # a second adapter without matching kwargs would need this call to become source-aware.
     adapter = get_source_adapter(
-        source_code, max_pages=max_pages, proxy_provider=proxy_provider, outcome_sink=counter.record
+        source_code,
+        max_pages=max_pages,
+        proxy_provider=proxy_provider,
+        outcome_sink=counter.record,
+        delay=rate_limit.request_delay_seconds,
+        jitter=rate_limit.request_jitter_seconds,
+        network_error_retry_delay=rate_limit.network_error_retry_delay_seconds,
     )
     source = await get_or_create_source(
         session, code=adapter.source_code, name=adapter.display_name, domain=adapter.domain, country=adapter.country

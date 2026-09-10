@@ -14,12 +14,15 @@ from app.models.scrape_job import ScrapeJob, ScrapeJobStatus, ScrapeJobType
 from app.models.user import User
 from app.scraping.pipeline import get_or_create_source
 from app.scraping.queue import get_arq_pool, get_job_enqueuer
+from app.scraping.rate_limit import get_scrape_rate_limit
 from app.scraping.schemas import (
     ScheduledScrapeCreate,
     ScheduledScrapeOut,
     ScheduledScrapeUpdate,
     ScrapeJobCreate,
     ScrapeJobOut,
+    ScrapeRateLimitOut,
+    ScrapeRateLimitUpdate,
     encode_job_query,
 )
 from app.sources.registry import SOURCE_REGISTRY
@@ -162,6 +165,38 @@ async def retry_scrape_job(
 
     await enqueue(str(job.id))
     return ScrapeJobOut.model_validate(job)
+
+
+@router.get("/rate-limit", response_model=ScrapeRateLimitOut)
+async def get_rate_limit(
+    session: AsyncSession = Depends(get_session),
+    _current_user: User = Depends(require_admin),
+) -> ScrapeRateLimitOut:
+    rate_limit = await get_scrape_rate_limit(session)
+    await session.commit()
+    return ScrapeRateLimitOut.model_validate(rate_limit)
+
+
+@router.patch("/rate-limit", response_model=ScrapeRateLimitOut)
+async def update_rate_limit(
+    payload: ScrapeRateLimitUpdate,
+    session: AsyncSession = Depends(get_session),
+    _current_user: User = Depends(require_admin),
+    _csrf: None = Depends(require_csrf),
+) -> ScrapeRateLimitOut:
+    """Takes effect for every scrape job started after this call — app/scraping/pipeline.py's
+    run_scrape reads the current row fresh each time, so a job already running keeps whatever
+    pacing it started with.
+    """
+    rate_limit = await get_scrape_rate_limit(session)
+    if payload.request_delay_seconds is not None:
+        rate_limit.request_delay_seconds = payload.request_delay_seconds
+    if payload.request_jitter_seconds is not None:
+        rate_limit.request_jitter_seconds = payload.request_jitter_seconds
+    if payload.network_error_retry_delay_seconds is not None:
+        rate_limit.network_error_retry_delay_seconds = payload.network_error_retry_delay_seconds
+    await session.commit()
+    return ScrapeRateLimitOut.model_validate(rate_limit)
 
 
 @router.get("/schedules", response_model=list[ScheduledScrapeOut])

@@ -402,3 +402,65 @@ async def test_scheduled_scrapes_require_admin(client, email_sender):
     await _register_and_login(client, email_sender)
     response = await client.get("/api/v1/scrape/schedules")
     assert response.status_code == 403
+
+
+async def test_get_rate_limit_returns_config_defaults_on_first_read(client, email_sender, session_factory):
+    await _register_login_and_promote(client, email_sender, session_factory)
+    settings = get_settings()
+
+    response = await client.get("/api/v1/scrape/rate-limit")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["request_delay_seconds"] == settings.scrape_request_delay_seconds
+    assert body["request_jitter_seconds"] == settings.scrape_request_jitter_seconds
+    assert body["network_error_retry_delay_seconds"] == settings.scrape_network_error_retry_delay_seconds
+
+
+async def test_update_rate_limit_persists_and_partially_updates(client, email_sender, session_factory):
+    await _register_login_and_promote(client, email_sender, session_factory)
+
+    response = await client.patch(
+        "/api/v1/scrape/rate-limit",
+        json={"request_delay_seconds": 0.2, "request_jitter_seconds": 0.1},
+        headers=_csrf_headers(client),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["request_delay_seconds"] == 0.2
+    assert body["request_jitter_seconds"] == 0.1
+
+    get_response = await client.get("/api/v1/scrape/rate-limit")
+    assert get_response.json()["request_delay_seconds"] == 0.2
+    assert get_response.json()["request_jitter_seconds"] == 0.1
+
+    # A second PATCH that only touches network_error_retry_delay_seconds must leave the values
+    # set above untouched.
+    response = await client.patch(
+        "/api/v1/scrape/rate-limit",
+        json={"network_error_retry_delay_seconds": 9.0},
+        headers=_csrf_headers(client),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["network_error_retry_delay_seconds"] == 9.0
+    assert body["request_delay_seconds"] == 0.2
+    assert body["request_jitter_seconds"] == 0.1
+
+
+async def test_update_rate_limit_rejects_negative_values(client, email_sender, session_factory):
+    await _register_login_and_promote(client, email_sender, session_factory)
+
+    response = await client.patch(
+        "/api/v1/scrape/rate-limit",
+        json={"request_delay_seconds": -1},
+        headers=_csrf_headers(client),
+    )
+
+    assert response.status_code == 422
+
+
+async def test_rate_limit_requires_admin(client, email_sender):
+    await _register_and_login(client, email_sender)
+    response = await client.get("/api/v1/scrape/rate-limit")
+    assert response.status_code == 403

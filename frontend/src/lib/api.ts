@@ -124,6 +124,20 @@ export const scrapeApi = {
     }),
 
   deleteSchedule: (id: string) => apiFetch<void>(`/api/v1/scrape/schedules/${id}`, { method: 'DELETE' }),
+
+  getRateLimit: () => apiFetch<ScrapeRateLimitOut>('/api/v1/scrape/rate-limit'),
+
+  updateRateLimit: (update: Partial<ScrapeRateLimitOut>) =>
+    apiFetch<ScrapeRateLimitOut>('/api/v1/scrape/rate-limit', {
+      method: 'PATCH',
+      body: JSON.stringify(update),
+    }),
+}
+
+export interface ScrapeRateLimitOut {
+  request_delay_seconds: number
+  request_jitter_seconds: number
+  network_error_retry_delay_seconds: number
 }
 
 export interface ScheduledScrapeOut {

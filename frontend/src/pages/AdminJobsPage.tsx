@@ -1,7 +1,14 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { EmptyState, ErrorState, LoadingState } from '../components/StateMessage'
-import { ApiError, type ScrapeJobStats, type ScrapeJobStatus, type ScrapeJobType, scrapeApi } from '../lib/api'
+import {
+  ApiError,
+  type ScrapeJobStats,
+  type ScrapeJobStatus,
+  type ScrapeJobType,
+  type ScrapeRateLimitOut,
+  scrapeApi,
+} from '../lib/api'
 import { describeQuery, type SearchQuery } from '../lib/search'
 
 const STATUS_OPTIONS: { value: ScrapeJobStatus | ''; label: string }[] = [
@@ -70,6 +77,116 @@ function describeJobStats(stats: Record<string, unknown> | null): string {
     parts.push(s.error_detail)
   }
   return parts.join(' — ')
+}
+
+// Editable form for the currently-loaded rate limit — split out from RateLimitSettings so its
+// local draft state can be initialized directly from the `initial` prop (useState(initial)) once
+// the query has data, instead of syncing query -> state with an effect.
+function RateLimitForm({ initial }: { initial: ScrapeRateLimitOut }) {
+  const [form, setForm] = useState(initial)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
+  const [savedAt, setSavedAt] = useState<number | null>(null)
+
+  async function handleSave(event: React.FormEvent) {
+    event.preventDefault()
+    setSaveError(null)
+    setIsSaving(true)
+    try {
+      const updated = await scrapeApi.updateRateLimit(form)
+      setForm(updated)
+      setSavedAt(Date.now())
+    } catch (err) {
+      setSaveError(err instanceof ApiError ? err.message : 'Не удалось сохранить настройки')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <>
+      <form onSubmit={handleSave} className="flex flex-wrap items-end gap-3">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="rl-delay">
+            Задержка, сек
+          </label>
+          <input
+            id="rl-delay"
+            type="number"
+            min={0}
+            step={0.1}
+            value={form.request_delay_seconds}
+            onChange={(e) => setForm({ ...form, request_delay_seconds: Number(e.target.value) })}
+            className="w-28 rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="rl-jitter">
+            Разброс (±), сек
+          </label>
+          <input
+            id="rl-jitter"
+            type="number"
+            min={0}
+            step={0.1}
+            value={form.request_jitter_seconds}
+            onChange={(e) => setForm({ ...form, request_jitter_seconds: Number(e.target.value) })}
+            className="w-28 rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="rl-retry">
+            Retry при обрыве, сек
+          </label>
+          <input
+            id="rl-retry"
+            type="number"
+            min={0}
+            step={0.5}
+            value={form.network_error_retry_delay_seconds}
+            onChange={(e) => setForm({ ...form, network_error_retry_delay_seconds: Number(e.target.value) })}
+            className="w-32 rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={isSaving}
+          className="rounded-md bg-slate-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+        >
+          {isSaving ? 'Сохраняем…' : 'Сохранить'}
+        </button>
+        {savedAt && !saveError && <span className="text-xs text-emerald-600">Сохранено</span>}
+      </form>
+      {saveError && <p className="mt-2 text-sm text-red-600">{saveError}</p>}
+    </>
+  )
+}
+
+// Пауза между запросами внутри одной задачи парсинга (app/scraping/fetch_strategy.py's
+// _RequestPacer) — держится в БД (ScrapeRateLimit), поэтому меняется здесь без деплоя и сразу
+// действует на все новые задачи (уже запущенные задачи донашивают старое значение).
+function RateLimitSettings() {
+  const rateLimitQuery = useQuery({
+    queryKey: ['admin', 'scrape-rate-limit'],
+    queryFn: scrapeApi.getRateLimit,
+  })
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4">
+      <h2 className="mb-1 text-sm font-medium text-slate-900">Скорость парсинга</h2>
+      <p className="mb-3 text-sm text-slate-600">
+        Пауза между запросами к источнику внутри одной задачи. Меньшие значения — быстрее обход
+        (12 тыс. страниц при 0.8с ≈ 2.5–3 часа вместо 7–8), но выше риск блокировки и больше
+        расход прокси-квоты при срабатывании защиты источника.
+      </p>
+
+      {rateLimitQuery.isLoading && <LoadingState />}
+      {rateLimitQuery.isError && (
+        <ErrorState message="Не удалось загрузить настройки" onRetry={() => rateLimitQuery.refetch()} />
+      )}
+      {rateLimitQuery.data && <RateLimitForm initial={rateLimitQuery.data} />}
+    </div>
+  )
 }
 
 export function AdminJobsPage() {
@@ -189,6 +306,8 @@ export function AdminJobsPage() {
         <h1 className="text-xl font-semibold text-slate-900">Задачи парсинга</h1>
         <p className="mt-1 text-sm text-slate-600">Создание и управление задачами сбора объявлений.</p>
       </div>
+
+      <RateLimitSettings />
 
       <form onSubmit={handleCreate} className="rounded-lg border border-slate-200 bg-white p-4">
         <h2 className="mb-3 text-sm font-medium text-slate-900">Новая задача</h2>
