@@ -3,6 +3,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.follow import Follow
@@ -49,6 +50,11 @@ class ListingRepository:
         Snapshot only if price/mileage/title actually changed. Returns (listing, is_new,
         previous_price) — previous_price is the price before this update, only set when the price
         actually changed (used by app/notifications/matching.py to detect drops for #21/#26).
+
+        The insert is attempted inside a SAVEPOINT so a concurrent scrape of the same source
+        racing us to create the same (source_id, external_id) row only aborts that SAVEPOINT,
+        not the whole job's transaction — we then fall back to the update path against the row
+        the other job just committed, instead of crashing on uq_listings_source_external_id.
         """
         now = datetime.now(timezone.utc)
         existing = await self._find_existing(source_id, data.external_id)
@@ -78,11 +84,23 @@ class ListingRepository:
                 last_seen_at=now,
                 last_checked_at=now,
             )
-            self.session.add(listing)
-            await self.session.flush()
-            self._add_snapshot(listing, data, now)
-            return listing, True, None
+            try:
+                async with self.session.begin_nested():
+                    self.session.add(listing)
+                    await self.session.flush()
+            except IntegrityError:
+                existing = await self._find_existing(source_id, data.external_id)
+                if existing is None:
+                    raise
+            else:
+                self._add_snapshot(listing, data, now)
+                return listing, True, None
 
+        return self._apply_update(existing, data, now)
+
+    def _apply_update(
+        self, existing: Listing, data: SourceListing, now: datetime
+    ) -> tuple[Listing, bool, int | None]:
         existing.last_seen_at = now
         existing.last_checked_at = now
         existing.status = ListingStatus.ACTIVE
