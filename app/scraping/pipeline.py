@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.listings.repository import ListingRepository
 from app.models.source import Source
-from app.scraping.fetch_outcome import FetchBlockedError, OutcomeCounter, ParserError
+from app.scraping.fetch_outcome import FetchBlockedError, FetchOutcome, OutcomeCounter, ParserError
 from app.scraping.proxy import ProxyProvider
 from app.search.query import SearchQuery
 from app.sources.base import CarSource, SourceListing
@@ -26,6 +26,11 @@ class ScrapeStats:
     listings_removed: int = 0
     outcome_counts: dict[str, int] = field(default_factory=dict)
     blocked: bool = False
+    # Set when `blocked` was caused by a hard abort (FetchBlockedError/ParserError bubbling out of
+    # the adapter) — the message that explains why, since `outcome_counts` alone only says how many
+    # of which outcome, not what actually happened. Unset for a skipped-page-only partial run,
+    # where per-page detail already reads out of outcome_counts (parser_error/page_skipped counts).
+    error_detail: str | None = None
     seen_external_ids: set[str] = field(default_factory=set)
     # Per-listing detail the aggregate counts above don't carry — consumed by
     # app/notifications/matching.py (issues #21/#26) to generate NEW_MATCH/PRICE_DROP events
@@ -96,11 +101,19 @@ async def run_scrape(
                 stats.listings_updated += 1
                 if previous_price is not None and previous_price > listing.price:
                     stats.price_drops.append((listing.id, previous_price, listing.price))
-    except (FetchBlockedError, ParserError):
+    except (FetchBlockedError, ParserError) as exc:
         # Stop pagination early but keep whatever was already upserted this run — a partial
         # result is more useful than losing it. FetchBlockedError means the source just told us
-        # to back off (burning further proxy/direct requests would be wasteful); ParserError means
-        # one page came back in an unexpected shape, which a retry of the same page won't fix.
+        # to back off (burning further proxy/direct requests would be wasteful); ParserError here
+        # means the adapter itself gave up on retrying (see PolovniAutomobiliSource._fetch_listing
+        # /fetch_listing, which still raise immediately — only the search-page loop retries and
+        # skips instead of raising).
+        stats.blocked = True
+        stats.error_detail = str(exc)
+
+    if counter.as_dict().get(FetchOutcome.PAGE_SKIPPED.value, 0) > 0:
+        # A skipped page means this run isn't a complete picture of the source even though the
+        # crawl otherwise ran to completion — same reasoning as the abort-mid-crawl case above.
         stats.blocked = True
 
     if mark_removed and not stats.blocked and stats.listings_seen > 0:

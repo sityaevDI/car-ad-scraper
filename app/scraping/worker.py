@@ -58,6 +58,12 @@ async def run_scrape_job(ctx: dict[str, Any], job_id: str) -> None:
                 mark_removed=job.job_type == ScrapeJobType.FULL_SOURCE_REFRESH,
             )
         except Exception as exc:  # noqa: BLE001 - persisted below, not swallowed silently
+            # A failure inside run_scrape (e.g. an IntegrityError from a concurrent scrape of the
+            # same source racing on the same new listing) leaves the session's transaction needing
+            # an explicit rollback before it can be used again — without this, the commit() below
+            # itself raises PendingRollbackError, so the real failure never gets recorded and the
+            # job is left stuck instead of FAILED.
+            await session.rollback()
             job.status = ScrapeJobStatus.FAILED
             job.error = {"type": type(exc).__name__, "message": str(exc)}
             job.finished_at = datetime.now(timezone.utc)
@@ -76,6 +82,7 @@ async def run_scrape_job(ctx: dict[str, Any], job_id: str) -> None:
             "listings_updated": stats.listings_updated,
             "listings_removed": stats.listings_removed,
             "outcome_counts": stats.outcome_counts,
+            "error_detail": stats.error_detail,
         }
         job.finished_at = datetime.now(timezone.utc)
         await session.commit()
