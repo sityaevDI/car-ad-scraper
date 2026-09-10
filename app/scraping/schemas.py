@@ -38,6 +38,7 @@ class ScrapeJobOut(BaseModel):
     job_type: ScrapeJobType
     status: ScrapeJobStatus
     query: dict | None
+    created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
     stats: dict | None

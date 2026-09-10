@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { EmptyState, ErrorState, LoadingState } from '../components/StateMessage'
-import { ApiError, type ScrapeJobStatus, type ScrapeJobType, scrapeApi } from '../lib/api'
+import { ApiError, type ScrapeJobStats, type ScrapeJobStatus, type ScrapeJobType, scrapeApi } from '../lib/api'
+import { describeQuery, type SearchQuery } from '../lib/search'
 
 const STATUS_OPTIONS: { value: ScrapeJobStatus | ''; label: string }[] = [
   { value: '', label: 'Все статусы' },
@@ -42,8 +43,31 @@ function formatTimestamp(iso: string | null): string {
   return new Date(iso).toLocaleString('ru-RU')
 }
 
+// job.query is {"search_query": SearchQuery, "max_pages": number} — see encode_job_query in
+// app/scraping/schemas.py.
+function describeJobQuery(query: Record<string, unknown> | null): string {
+  if (!query) return 'Все объявления'
+  const searchQuery = (query.search_query as SearchQuery | undefined) ?? {}
+  const maxPages = typeof query.max_pages === 'number' ? query.max_pages : undefined
+  const filters = describeQuery(searchQuery)
+  return maxPages ? `${filters} (до ${maxPages} стр.)` : filters
+}
+
+function describeJobStats(stats: Record<string, unknown> | null): string {
+  if (!stats) return '—'
+  const s = stats as ScrapeJobStats
+  const seen = s.listings_seen ?? 0
+  const created = s.listings_created ?? 0
+  const updated = s.listings_updated ?? 0
+  const removed = s.listings_removed ?? 0
+  return `всего ${seen}, новых ${created}, обновлено ${updated}, удалено ${removed}`
+}
+
 export function AdminJobsPage() {
   const [statusFilter, setStatusFilter] = useState<ScrapeJobStatus | ''>('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [jobsCollapsed, setJobsCollapsed] = useState(false)
   const [make, setMake] = useState('')
   const [maxPages, setMaxPages] = useState(5)
   const [formError, setFormError] = useState<string | null>(null)
@@ -59,8 +83,13 @@ export function AdminJobsPage() {
   const [pendingScheduleId, setPendingScheduleId] = useState<string | null>(null)
 
   const jobsQuery = useQuery({
-    queryKey: ['admin', 'scrape-jobs', statusFilter],
-    queryFn: () => scrapeApi.listJobs(statusFilter || undefined),
+    queryKey: ['admin', 'scrape-jobs', statusFilter, dateFrom, dateTo],
+    queryFn: () =>
+      scrapeApi.listJobs({
+        status: statusFilter || undefined,
+        dateFrom: dateFrom ? `${dateFrom}T00:00:00` : undefined,
+        dateTo: dateTo ? `${dateTo}T23:59:59` : undefined,
+      }),
   })
 
   const schedulesQuery = useQuery({
@@ -205,79 +234,127 @@ export function AdminJobsPage() {
       </form>
 
       <div>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-medium text-slate-900">Все задачи</h2>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as ScrapeJobStatus | '')}
-            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm"
-          >
-            {STATUS_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-medium text-slate-900">Все задачи</h2>
+            <button
+              type="button"
+              onClick={() => setJobsCollapsed((prev) => !prev)}
+              className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100"
+            >
+              {jobsCollapsed ? 'Развернуть' : 'Свернуть'}
+            </button>
+            <a href="#schedules" className="text-xs font-medium text-slate-500 underline hover:text-slate-700">
+              К расписаниям ↓
+            </a>
+          </div>
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="job-date-from">
+                С даты
+              </label>
+              <input
+                id="job-date-from"
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="job-date-to">
+                По дату
+              </label>
+              <input
+                id="job-date-to"
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+              />
+            </div>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as ScrapeJobStatus | '')}
+              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+            >
+              {STATUS_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
-        {jobsQuery.isLoading && <LoadingState />}
-        {jobsQuery.isError && <ErrorState message="Не удалось загрузить задачи" onRetry={() => jobsQuery.refetch()} />}
-        {jobsQuery.isSuccess && jobsQuery.data.length === 0 && <EmptyState message="Задач пока нет" />}
+        {!jobsCollapsed && (
+          <>
+            {jobsQuery.isLoading && <LoadingState />}
+            {jobsQuery.isError && (
+              <ErrorState message="Не удалось загрузить задачи" onRetry={() => jobsQuery.refetch()} />
+            )}
+            {jobsQuery.isSuccess && jobsQuery.data.length === 0 && <EmptyState message="Задач пока нет" />}
 
-        {jobsQuery.isSuccess && jobsQuery.data.length > 0 && (
-          <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500">
-                <tr>
-                  <th className="px-4 py-2">Тип</th>
-                  <th className="px-4 py-2">Статус</th>
-                  <th className="px-4 py-2">Начало</th>
-                  <th className="px-4 py-2">Конец</th>
-                  <th className="px-4 py-2">Ошибка</th>
-                  <th className="px-4 py-2" />
-                </tr>
-              </thead>
-              <tbody>
-                {jobsQuery.data.map((job) => (
-                  <tr key={job.id} className="border-b border-slate-100 last:border-0">
-                    <td className="px-4 py-2 text-slate-700">{JOB_TYPE_LABELS[job.job_type]}</td>
-                    <td className="px-4 py-2 text-slate-700">{job.status}</td>
-                    <td className="px-4 py-2 text-slate-500">{formatTimestamp(job.started_at)}</td>
-                    <td className="px-4 py-2 text-slate-500">{formatTimestamp(job.finished_at)}</td>
-                    <td className="px-4 py-2 max-w-xs truncate text-slate-500">
-                      {job.error ? JSON.stringify(job.error) : '—'}
-                    </td>
-                    <td className="px-4 py-2 text-right">
-                      {CANCELLABLE.has(job.status) && (
-                        <button
-                          type="button"
-                          disabled={pendingActionId === job.id}
-                          onClick={() => handleCancel(job.id)}
-                          className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
-                        >
-                          Отменить
-                        </button>
-                      )}
-                      {RETRYABLE.has(job.status) && (
-                        <button
-                          type="button"
-                          disabled={pendingActionId === job.id}
-                          onClick={() => handleRetry(job.id)}
-                          className="ml-2 rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
-                        >
-                          Повторить
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+            {jobsQuery.isSuccess && jobsQuery.data.length > 0 && (
+              <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                <table className="w-full text-left text-sm">
+                  <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500">
+                    <tr>
+                      <th className="px-4 py-2">Тип</th>
+                      <th className="px-4 py-2">Параметры</th>
+                      <th className="px-4 py-2">Статус</th>
+                      <th className="px-4 py-2">Начало</th>
+                      <th className="px-4 py-2">Конец</th>
+                      <th className="px-4 py-2">Результат</th>
+                      <th className="px-4 py-2">Ошибка</th>
+                      <th className="px-4 py-2" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {jobsQuery.data.map((job) => (
+                      <tr key={job.id} className="border-b border-slate-100 last:border-0">
+                        <td className="px-4 py-2 text-slate-700">{JOB_TYPE_LABELS[job.job_type]}</td>
+                        <td className="px-4 py-2 max-w-xs text-slate-500">{describeJobQuery(job.query)}</td>
+                        <td className="px-4 py-2 text-slate-700">{job.status}</td>
+                        <td className="px-4 py-2 text-slate-500">{formatTimestamp(job.started_at)}</td>
+                        <td className="px-4 py-2 text-slate-500">{formatTimestamp(job.finished_at)}</td>
+                        <td className="px-4 py-2 text-slate-500">{describeJobStats(job.stats)}</td>
+                        <td className="px-4 py-2 max-w-xs truncate text-slate-500">
+                          {job.error ? JSON.stringify(job.error) : '—'}
+                        </td>
+                        <td className="px-4 py-2 text-right">
+                          {CANCELLABLE.has(job.status) && (
+                            <button
+                              type="button"
+                              disabled={pendingActionId === job.id}
+                              onClick={() => handleCancel(job.id)}
+                              className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                            >
+                              Отменить
+                            </button>
+                          )}
+                          {RETRYABLE.has(job.status) && (
+                            <button
+                              type="button"
+                              disabled={pendingActionId === job.id}
+                              onClick={() => handleRetry(job.id)}
+                              className="ml-2 rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                            >
+                              Повторить
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
         )}
       </div>
 
-      <div>
+      <div id="schedules" className="scroll-mt-4">
         <h2 className="mb-1 text-sm font-medium text-slate-900">Расписания</h2>
         <p className="mb-3 text-sm text-slate-600">
           Регулярный запуск задачи с заданным интервалом — держит данные актуальными без ручных запусков.

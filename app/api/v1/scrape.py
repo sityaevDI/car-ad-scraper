@@ -43,6 +43,8 @@ async def list_scrape_jobs(
     _current_user: User = Depends(require_admin),
     status: ScrapeJobStatus | None = None,
     source_id: uuid.UUID | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> list[ScrapeJobOut]:
@@ -51,6 +53,10 @@ async def list_scrape_jobs(
         stmt = stmt.where(ScrapeJob.status == status)
     if source_id is not None:
         stmt = stmt.where(ScrapeJob.source_id == source_id)
+    if date_from is not None:
+        stmt = stmt.where(ScrapeJob.created_at >= date_from)
+    if date_to is not None:
+        stmt = stmt.where(ScrapeJob.created_at <= date_to)
     jobs = (await session.execute(stmt)).scalars().all()
     return [ScrapeJobOut.model_validate(job) for job in jobs]
 

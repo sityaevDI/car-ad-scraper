@@ -2,6 +2,8 @@
 pattern: real FastAPI app over ASGI, dependency overrides instead of a real Postgres/Redis/arq.
 """
 
+from datetime import datetime, timedelta
+
 import pytest
 import pytest_asyncio
 from fakeredis import FakeAsyncRedis
@@ -238,6 +240,30 @@ async def test_list_scrape_jobs_filters_by_status(client, email_sender, session_
     assert response.status_code == 200
     body = response.json()
     assert [job["id"] for job in body] == [job_id]
+
+
+async def test_list_scrape_jobs_filters_by_date_range(client, email_sender, session_factory):
+    await _register_login_and_promote(client, email_sender, session_factory)
+    create_response = await client.post(
+        "/api/v1/scrape/jobs", json={"source_code": "polovniautomobili"}, headers=_csrf_headers(client)
+    )
+    job_id = create_response.json()["id"]
+    created_at = datetime.fromisoformat(create_response.json()["created_at"])
+
+    future_from = (created_at + timedelta(days=1)).isoformat()
+    response = await client.get("/api/v1/scrape/jobs", params={"date_from": future_from})
+    assert response.status_code == 200
+    assert response.json() == []
+
+    past_from = (created_at - timedelta(days=1)).isoformat()
+    response = await client.get("/api/v1/scrape/jobs", params={"date_from": past_from})
+    assert response.status_code == 200
+    assert [job["id"] for job in response.json()] == [job_id]
+
+    past_to = (created_at - timedelta(days=1)).isoformat()
+    response = await client.get("/api/v1/scrape/jobs", params={"date_to": past_to})
+    assert response.status_code == 200
+    assert response.json() == []
 
 
 async def test_list_scrape_jobs_requires_admin(client, email_sender):
