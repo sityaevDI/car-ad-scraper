@@ -17,6 +17,7 @@ export interface SearchQuery {
   fuel_types?: string[]
   transmissions?: string[]
   body_types?: string[]
+  equipment?: string[]
   location?: string
 }
 
@@ -27,6 +28,7 @@ export function describeQuery(query: SearchQuery): string {
   if (Array.isArray(query.models) && query.models.length) parts.push((query.models as string[]).join('/'))
   if (query.year_min || query.year_max) parts.push(`${query.year_min ?? '…'}–${query.year_max ?? '…'}`)
   if (query.price_min || query.price_max) parts.push(`€${query.price_min ?? '…'}–${query.price_max ?? '…'}`)
+  if (query.equipment?.length) parts.push(`+${query.equipment.length} опций`)
   return parts.length ? parts.join(', ') : 'Все объявления'
 }
 
