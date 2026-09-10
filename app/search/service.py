@@ -88,6 +88,8 @@ def _apply_filters(stmt: Select, query: SearchQuery) -> Select:
         stmt = stmt.where(Listing.transmission.in_(query.transmissions))
     if query.body_types:
         stmt = stmt.where(Listing.body_type.in_(query.body_types))
+    if query.equipment:
+        stmt = stmt.where(Listing.equipment.contains(query.equipment))
     if query.location:
         stmt = stmt.where(func.lower(Listing.location) == query.location.lower())
     return stmt

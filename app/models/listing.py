@@ -2,7 +2,8 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Uuid
+from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Index, Integer, String, Uuid
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.schema import UniqueConstraint
 
@@ -22,7 +23,10 @@ class Listing(UUIDPkMixin, TimestampMixin, Base):
     """
 
     __tablename__ = "listings"
-    __table_args__ = (UniqueConstraint("source_id", "external_id", name="uq_listings_source_external_id"),)
+    __table_args__ = (
+        UniqueConstraint("source_id", "external_id", name="uq_listings_source_external_id"),
+        Index("ix_listings_equipment", "equipment", postgresql_using="gin"),
+    )
 
     source_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("sources.id"), nullable=False)
     external_id: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -50,6 +54,16 @@ class Listing(UUIDPkMixin, TimestampMixin, Base):
     seller_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     seller_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     image_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+
+    # Backfilled once from the listing detail page the first time it's seen (search-page results
+    # don't carry it) — see app/scraping/pipeline.py's new-listing enrichment step. Normalized
+    # slugs from app/sources/polovniautomobili/mapper.py's equipment vocabulary. Native ARRAY (with
+    # a GIN index below) for `@>` containment filtering on Postgres; the sqlite variant is only
+    # there so the test suite's in-memory sqlite db (see tests/conftest.py) can create this table —
+    # equipment filtering itself is Postgres-only, same as the GIN index.
+    equipment: Mapped[list[str]] = mapped_column(
+        ARRAY(String).with_variant(JSON(), "sqlite"), default=list, nullable=False
+    )
 
     status: Mapped[ListingStatus] = mapped_column(
         Enum(ListingStatus, native_enum=False, length=16), default=ListingStatus.ACTIVE, nullable=False

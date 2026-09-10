@@ -44,6 +44,7 @@ class SourceListing:
     location: str | None = None
     seller_type: str | None = None
     image_url: str | None = None
+    equipment: list[str] = field(default_factory=list)
     raw: dict[str, Any] = field(default_factory=dict)
 
 

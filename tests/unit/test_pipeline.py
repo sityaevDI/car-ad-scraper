@@ -7,7 +7,7 @@ from app.models.listing import Listing, ListingStatus
 from app.scraping.fetch_outcome import FetchBlockedError, FetchOutcome, ParserError
 from app.scraping.pipeline import run_scrape
 from app.search.query import SearchQuery
-from app.sources.base import SourceListing
+from app.sources.base import SourceListing, SourceListingRef
 
 
 def _listing(external_id: str, price: int) -> SourceListing:
@@ -39,6 +39,33 @@ class StubAdapter:
                 self.outcome_sink(FetchOutcome.SUCCESS)
             yield _listing(external_id, 10_000)
 
+    async def fetch_listing(self, ref: SourceListingRef) -> SourceListing:
+        return _listing(ref.external_id, 10_000)
+
+
+class StubAdapterWithEquipment(StubAdapter):
+    """Tracks fetch_listing calls (as a class attribute, since the pipeline instantiates a fresh
+    adapter per run_scrape() call — see app/sources/registry.py) so tests can assert equipment is
+    backfilled only once per listing (on creation), not re-fetched on every re-crawl. Each test
+    gets its own isolated subclass via _make_stub_adapter_with_equipment below.
+    """
+
+    fetch_listing_calls: list[str]
+
+    async def fetch_listing(self, ref: SourceListingRef) -> SourceListing:
+        self.fetch_listing_calls.append(ref.external_id)
+        listing = _listing(ref.external_id, 10_000)
+        listing.equipment = ["bluetooth", "apple_carplay"]
+        return listing
+
+
+def _make_stub_adapter_with_equipment(external_ids: list[str]) -> type[StubAdapterWithEquipment]:
+    return type(
+        "_ConfiguredStubAdapterWithEquipment",
+        (StubAdapterWithEquipment,),
+        {"external_ids": external_ids, "fetch_listing_calls": []},
+    )
+
 
 def _make_stub_adapter(external_ids: list[str]) -> type[StubAdapter]:
     return type("_ConfiguredStubAdapter", (StubAdapter,), {"external_ids": external_ids})
@@ -62,6 +89,9 @@ class StubBlockedAdapter:
             self.outcome_sink(FetchOutcome.FORBIDDEN)
         raise FetchBlockedError(FetchOutcome.FORBIDDEN)
 
+    async def fetch_listing(self, ref: SourceListingRef) -> SourceListing:
+        return _listing(ref.external_id, 10_000)
+
 
 class StubParserErrorAdapter:
     source_code = "stub_source"
@@ -79,6 +109,9 @@ class StubParserErrorAdapter:
         if self.outcome_sink:
             self.outcome_sink(FetchOutcome.PARSER_ERROR)
         raise ParserError("unexpected page shape")
+
+    async def fetch_listing(self, ref: SourceListingRef) -> SourceListing:
+        return _listing(ref.external_id, 10_000)
 
 
 async def test_run_scrape_persists_partial_results_when_blocked_mid_crawl(session, monkeypatch):
@@ -145,3 +178,19 @@ async def test_run_scrape_skips_mark_removed_when_blocked_mid_crawl(session, mon
     assert stats.listings_removed == 0
     statuses = {listing.status for listing in (await session.execute(select(Listing))).scalars().all()}
     assert statuses == {ListingStatus.ACTIVE}
+
+
+async def test_run_scrape_backfills_equipment_once_on_creation(session, monkeypatch):
+    """Search-page results don't carry equipment (see mapper.py), so a new listing gets one
+    detail-page fetch to backfill it — but only once, not on every re-crawl of the same listing.
+    """
+    adapter_cls = _make_stub_adapter_with_equipment(["1"])
+    monkeypatch.setitem(registry.SOURCE_REGISTRY, "stub_source", adapter_cls)
+
+    await run_scrape(session, source_code="stub_source", query=SearchQuery())
+    listing = (await session.execute(select(Listing))).scalar_one()
+    assert listing.equipment == ["bluetooth", "apple_carplay"]
+    assert adapter_cls.fetch_listing_calls == ["1"]
+
+    await run_scrape(session, source_code="stub_source", query=SearchQuery())
+    assert adapter_cls.fetch_listing_calls == ["1"]  # not called again for the already-known listing

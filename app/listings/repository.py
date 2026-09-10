@@ -79,6 +79,7 @@ class ListingRepository:
                 location=data.location,
                 seller_type=data.seller_type,
                 image_url=data.image_url,
+                equipment=data.equipment,
                 status=ListingStatus.ACTIVE,
                 first_seen_at=now,
                 last_seen_at=now,
@@ -121,6 +122,12 @@ class ListingRepository:
             self._add_snapshot(existing, data, now)
 
         return existing, False, previous_price
+
+    def set_equipment(self, listing: Listing, equipment: list[str]) -> None:
+        """Called once, right after a new listing is created, with equipment parsed from its
+        detail page (search-page results don't carry it) — see app/scraping/pipeline.py.
+        """
+        listing.equipment = equipment
 
     async def mark_missing_as_removed(self, source_id: uuid.UUID, seen_external_ids: set[str]) -> int:
         """Mark active listings for a source that were not encountered in the latest crawl as

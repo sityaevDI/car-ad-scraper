@@ -30,6 +30,7 @@ class SearchQuery(BaseModel):
     fuel_types: list[str] | None = None
     transmissions: list[str] | None = None
     body_types: list[str] | None = None
+    equipment: list[str] | None = None
     location: str | None = None
 
     def stable_hash(self) -> str:

@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import pytest
@@ -75,6 +76,21 @@ def test_parse_listing_extracts_full_detail():
     assert "safety" in listing.raw
     assert "equipment" in listing.raw
     assert listing.image_url == "https://cdn.polovniautomobili.com/user-images/thumbs/3013/30136732/0d3bcb74b14a.jpg"
+    # equipment is translated to normalized slugs for filtering (see mapper._EQUIPMENT_NORMALIZED)
+    assert "bluetooth" in listing.equipment
+    assert "apple_carplay" in listing.equipment
+    assert "adaptive_cruise_control" in listing.equipment
+    assert all(re.fullmatch(r"[a-z0-9_]+", item) for item in listing.equipment)  # nothing left untranslated
+
+
+def test_parse_search_page_does_not_include_equipment():
+    html = (FIXTURES / "search_page_01.html").read_text(encoding="utf-8")
+    adapter = PolovniAutomobiliSource()
+
+    listings, _ = adapter.parse_search_page(html)
+
+    # The search/results page JSON simply doesn't carry `equipment` — see mapper.py's docstring.
+    assert all(listing.equipment == [] for listing in listings)
 
 
 def test_fetcher_is_configured_from_settings():
