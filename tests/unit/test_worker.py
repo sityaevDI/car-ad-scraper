@@ -76,6 +76,7 @@ async def test_run_scrape_job_marks_completed_on_success(worker_session_factory,
             "listings_updated": 1,
             "listings_removed": 0,
             "outcome_counts": {"success": 3},
+            "error_detail": None,
         }
         assert job.started_at is not None
         assert job.finished_at is not None
@@ -113,6 +114,30 @@ async def test_run_scrape_job_marks_failed_on_exception(worker_session_factory, 
         job = await session.get(ScrapeJob, job_id)
         assert job.status == ScrapeJobStatus.FAILED
         assert job.error == {"type": "RuntimeError", "message": "boom"}
+
+
+async def test_run_scrape_job_marks_failed_when_session_needs_rollback(worker_session_factory, monkeypatch):
+    """Mirrors a concurrent-scrape race in ListingRepository.upsert_listing: run_scrape leaves the
+    session's transaction needing an explicit rollback (e.g. after a flush-time IntegrityError)
+    before raising. Without a rollback first, the except block's own commit() would itself raise
+    PendingRollbackError and the job would never get marked FAILED — see app/scraping/worker.py.
+    """
+    job_id = await _seed_job(worker_session_factory)
+
+    async def fake_run_scrape(session, source_code, query, max_pages=5, proxy_provider=None, mark_removed=False):
+        session.add(Source(code="polovniautomobili", name="dup", domain="dup.example.com", country="RS"))
+        await session.flush()  # raises IntegrityError: code is unique
+
+    monkeypatch.setattr(worker_module, "run_scrape", fake_run_scrape)
+
+    ctx = {"session_factory": worker_session_factory, "proxy_provider": NullProxyProvider()}
+    with pytest.raises(Exception):
+        await worker_module.run_scrape_job(ctx, str(job_id))
+
+    async with worker_session_factory() as session:
+        job = await session.get(ScrapeJob, job_id)
+        assert job.status == ScrapeJobStatus.FAILED
+        assert job.finished_at is not None
 
 
 async def test_run_scrape_job_passes_stored_query_and_max_pages_to_run_scrape(worker_session_factory, monkeypatch):

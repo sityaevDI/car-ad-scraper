@@ -27,6 +27,10 @@ class FetchOutcome(str, enum.Enum):
     # markup/JSON shape). Classified anyway so it shows up in per-job stats instead of crashing
     # the job unclassified.
     PARSER_ERROR = "parser_error"
+    # A page that failed to parse twice in a row (see PolovniAutomobiliSource._iter_search_pages)
+    # was skipped rather than aborting the whole crawl. Not block-like and not itself a fetch
+    # outcome — recorded once per abandoned page so job stats show how many pages were lost.
+    PAGE_SKIPPED = "page_skipped"
 
 
 BLOCK_LIKE = frozenset(
