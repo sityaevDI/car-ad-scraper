@@ -170,6 +170,9 @@ class StubPageSkippedAdapter:
             self.outcome_sink(FetchOutcome.SUCCESS)
         yield _listing("2", 12_000)
 
+    async def fetch_listing(self, ref: SourceListingRef) -> SourceListing:
+        return _listing(ref.external_id, 10_000)
+
 
 async def test_run_scrape_marks_blocked_when_a_page_was_skipped(session, monkeypatch):
     monkeypatch.setitem(registry.SOURCE_REGISTRY, "stub_source", StubPageSkippedAdapter)
