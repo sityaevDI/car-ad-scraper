@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from datetime import datetime, timezone
 
@@ -234,6 +235,44 @@ async def test_run_scrape_job_requests_mark_removed_only_for_full_source_refresh
         full_refresh_job = await session.get(ScrapeJob, full_refresh_job_id)
         assert search_job.stats["listings_removed"] == 0
         assert full_refresh_job.stats["listings_removed"] == 2
+
+
+def test_estimate_job_timeout_seconds_scales_with_max_pages():
+    # Floor: a tiny job doesn't get squeezed below the old flat default.
+    assert worker_module._estimate_job_timeout_seconds(max_pages=1, delay=0.8, jitter=0.4) == (
+        worker_module._MIN_JOB_TIMEOUT_SECONDS
+    )
+    # A big job's budget scales with max_pages instead of being capped at the same 300s.
+    big = worker_module._estimate_job_timeout_seconds(max_pages=500, delay=0.8, jitter=0.4)
+    assert big == pytest.approx(500 * (1 + worker_module._ASSUMED_LISTINGS_PER_PAGE) * 1.2)
+    assert big > worker_module._MIN_JOB_TIMEOUT_SECONDS
+
+
+async def test_run_scrape_job_marks_failed_on_computed_timeout(worker_session_factory, monkeypatch):
+    """A job that outruns its computed timeout gets cancelled and recorded as FAILED instead of
+    being left stuck at RUNNING forever. Reproduces the bug this fixes: arq's own flat 300s
+    job_timeout used to cancel jobs like this via asyncio.CancelledError, which the old `except
+    Exception` handler didn't catch (CancelledError is a BaseException, not an Exception, since
+    Python 3.8) — so the job row never got updated and stayed RUNNING with no trace of the failure.
+    """
+    job_id = await _seed_job(worker_session_factory)
+    monkeypatch.setattr(worker_module, "_estimate_job_timeout_seconds", lambda *args, **kwargs: 0.05)
+
+    async def fake_run_scrape(session, source_code, query, max_pages=5, proxy_provider=None, mark_removed=False):
+        await asyncio.sleep(10)
+        return ScrapeStats()
+
+    monkeypatch.setattr(worker_module, "run_scrape", fake_run_scrape)
+
+    ctx = {"session_factory": worker_session_factory, "proxy_provider": NullProxyProvider()}
+    with pytest.raises(TimeoutError):
+        await worker_module.run_scrape_job(ctx, str(job_id))
+
+    async with worker_session_factory() as session:
+        job = await session.get(ScrapeJob, job_id)
+        assert job.status == ScrapeJobStatus.FAILED
+        assert job.error["type"] == "TimeoutError"
+        assert job.finished_at is not None
 
 
 async def test_run_scrape_job_skips_already_cancelled_job(worker_session_factory, monkeypatch):
