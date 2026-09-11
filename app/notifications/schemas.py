@@ -15,6 +15,9 @@ class NotificationOut(BaseModel):
     payload: dict | None
     read_at: datetime | None
     created_at: datetime
+    # True when this is a NEW_MATCH notification whose payload.saved_search_id no longer exists —
+    # lets the UI skip rendering a link that would just 404. Always False for other types.
+    saved_search_deleted: bool = False
 
 
 class NotificationListOut(BaseModel):

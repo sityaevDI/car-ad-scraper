@@ -9,6 +9,7 @@ export interface NotificationOut {
   payload: Record<string, unknown> | null
   read_at: string | null
   created_at: string
+  saved_search_deleted: boolean
 }
 
 export interface NotificationListOut {

@@ -8,7 +8,11 @@ import { notificationDescription, notificationTitle } from '../notifications/for
 
 function notificationLinkTo(notification: NotificationOut): string | null {
   if (notification.listing_id) return `/listings/${notification.listing_id}`
-  if (notification.type === 'new_match' && typeof notification.payload?.saved_search_id === 'string') {
+  if (
+    notification.type === 'new_match' &&
+    !notification.saved_search_deleted &&
+    typeof notification.payload?.saved_search_id === 'string'
+  ) {
     return `/saved-searches/${notification.payload.saved_search_id}`
   }
   return null
