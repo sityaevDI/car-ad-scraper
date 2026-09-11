@@ -34,6 +34,7 @@ export function notificationDescription(notification: NotificationOut): string {
       const description = typeof payload.query_description === 'string' ? payload.query_description : ''
       const parts = [`${count} новых ${pluralizeListings(count)}`]
       if (updatedCount > 0) parts.push(`${updatedCount} обновилось`)
+      if (notification.saved_search_deleted) parts.push('поиск удалён')
       return `${parts.join(', ')}${description ? ` — ${description}` : ''}`
     }
     case 'price_drop':

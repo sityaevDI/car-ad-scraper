@@ -33,6 +33,15 @@ class SavedSearchRepository:
         )
         return result.scalar_one()
 
+    async def existing_ids(self, ids: set[uuid.UUID]) -> set[uuid.UUID]:
+        """Which of `ids` still exist — lets callers tell a stale reference (e.g. a NEW_MATCH
+        notification's payload.saved_search_id, kept as plain JSON rather than a FK) from a live one.
+        """
+        if not ids:
+            return set()
+        result = await self.session.execute(select(SavedSearch.id).where(SavedSearch.id.in_(ids)))
+        return set(result.scalars().all())
+
     async def list_due(self, cutoff: datetime) -> list[SavedSearch]:
         """Enabled saved searches never refreshed, or last refreshed before `cutoff` — backs the
         periodic-refresh cron in app/scraping/scheduler.py (#26).
