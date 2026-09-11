@@ -21,7 +21,7 @@ from app.scraping.fetch_outcome import (
     classify_exception,
     classify_response,
 )
-from app.scraping.proxy import FetchError, FetchMetrics, ProxyProvider
+from app.scraping.proxy import FetchError, FetchMetrics, ProxyEndpoint, ProxyProvider
 from scraping.utilities import default_request_headers
 
 
@@ -36,7 +36,7 @@ class FetchResult:
 
 
 class FetchStrategy(Protocol):
-    async def fetch(self, url: str) -> FetchResult: ...
+    async def fetch(self, url: str, *, force_proxy: bool = False) -> FetchResult: ...
 
 
 def _http_request(
@@ -96,7 +96,9 @@ class HttpFetcher:
         self._outcome_sink = outcome_sink
         self._pacer = _RequestPacer(delay, jitter)
 
-    async def fetch(self, url: str) -> FetchResult:
+    async def fetch(self, url: str, *, force_proxy: bool = False) -> FetchResult:
+        # force_proxy is accepted only to satisfy FetchStrategy — this fetcher has no proxy to
+        # force, by design (see class docstring), so it's a no-op here.
         await self._pacer.wait()
         outcome, response, detail = await asyncio.to_thread(_http_request, self.session, url, self.timeout, None)
         if self._outcome_sink is not None:
@@ -148,8 +150,32 @@ class ProxyHttpFetcher:
     async def _direct(self, url: str) -> tuple[FetchOutcome, requests.Response | None, str | None]:
         return await asyncio.to_thread(_http_request, self.session, url, self.timeout, None)
 
-    async def fetch(self, url: str) -> FetchResult:
+    async def _via_proxy(self, url: str, proxy: ProxyEndpoint) -> FetchResult:
+        proxy_outcome, proxy_response, proxy_detail = await asyncio.to_thread(
+            _http_request, self.session, url, self.timeout, proxy.url
+        )
+        self._record(proxy_outcome)
+        if proxy_outcome == FetchOutcome.SUCCESS:
+            assert proxy_response is not None
+            await self.proxy_provider.report_success(proxy, FetchMetrics(status_code=proxy_response.status_code))
+        else:
+            await self.proxy_provider.report_failure(proxy, FetchError(outcome=proxy_outcome))
+        return _to_result(proxy_outcome, proxy_response, proxy_detail)
+
+    async def fetch(self, url: str, *, force_proxy: bool = False) -> FetchResult:
+        """`force_proxy` skips the direct attempt entirely and goes straight to proxy — for a
+        caller that already knows a same-IP retry can't tell it anything new (e.g. a search page
+        that fetched fine, HTTP-wise, but failed to parse; see
+        PolovniAutomobiliSource._iter_search_pages). Falls back to the normal direct-first flow if
+        no proxy happens to be available, rather than giving up.
+        """
         await self._pacer.wait()
+
+        if force_proxy:
+            proxy = await self.proxy_provider.acquire(self.source)
+            if proxy is not None:
+                return await self._via_proxy(url, proxy)
+
         outcome, response, detail = await self._direct(url)
         self._record(outcome)
 
@@ -165,16 +191,7 @@ class ProxyHttpFetcher:
         if proxy is None:
             return _to_result(outcome, response, detail)
 
-        proxy_outcome, proxy_response, proxy_detail = await asyncio.to_thread(
-            _http_request, self.session, url, self.timeout, proxy.url
-        )
-        self._record(proxy_outcome)
-        if proxy_outcome == FetchOutcome.SUCCESS:
-            assert proxy_response is not None
-            await self.proxy_provider.report_success(proxy, FetchMetrics(status_code=proxy_response.status_code))
-        else:
-            await self.proxy_provider.report_failure(proxy, FetchError(outcome=proxy_outcome))
-        return _to_result(proxy_outcome, proxy_response, proxy_detail)
+        return await self._via_proxy(url, proxy)
 
 
 class PlaywrightFetcher:
@@ -187,7 +204,7 @@ class PlaywrightFetcher:
     def __init__(self, timeout: int = 15):
         self.timeout = timeout
 
-    async def fetch(self, url: str) -> FetchResult:
+    async def fetch(self, url: str, *, force_proxy: bool = False) -> FetchResult:
         raise NotImplementedError(
             "PlaywrightFetcher is a stub — browser-based fetching isn't implemented yet "
             "(docs/adr/05_ANTI_BOT_PROXY.md §6)."

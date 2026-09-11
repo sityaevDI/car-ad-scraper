@@ -136,18 +136,20 @@ class PolovniAutomobiliSource:
             self._record(FetchOutcome.PARSER_ERROR)
             raise ParserError(str(exc)) from exc
 
-    async def _fetch(self, url: str) -> str:
-        result = await self.fetcher.fetch(url)
+    async def _fetch(self, url: str, *, force_proxy: bool = False) -> str:
+        result = await self.fetcher.fetch(url, force_proxy=force_proxy)
         return raise_for_blocked(result, url)
 
-    async def _fetch_search_page(self, url: str, page: int) -> tuple[list[SourceListing], int] | None:
+    async def _fetch_search_page(
+        self, url: str, page: int, *, force_proxy: bool = False
+    ) -> tuple[list[SourceListing], int] | None:
         """One fetch+parse attempt for a search page. Returns None (rather than raising) on a
         parse failure, so `_iter_search_pages` can retry or skip the page instead of aborting the
         whole crawl — a fetch failure (FetchBlockedError, or the RuntimeError raise_for_blocked
         raises for TIMEOUT/SERVER_ERROR) still propagates normally, since those aren't
         page-specific and retrying won't help.
         """
-        html = await self._fetch(url)
+        html = await self._fetch(url, force_proxy=force_proxy)
         try:
             return self._guard_parse(self.parse_search_page, html)
         except ParserError as exc:
@@ -171,10 +173,14 @@ class PolovniAutomobiliSource:
             url = self.build_search_url(query, page)
             result = await self._fetch_search_page(url, page)
             if result is None:
-                # One retry: a parse failure could be a transient odd response. A second
-                # consecutive failure means this page really can't be parsed — skip it and keep
-                # crawling the rest of the source rather than losing everything after it.
-                result = await self._fetch_search_page(url, page)
+                # One retry, forced through the proxy: the first attempt already got HTTP 200 (a
+                # ParserError only happens after a successful fetch, see
+                # app/scraping/fetch_outcome.py) — a same-IP direct retry would just ask the exact
+                # same origin the exact same question again. A different egress IP is the one
+                # thing a retry can actually change, and is exactly what fetch_outcome.py's
+                # BLOCK_LIKE-only proxy escalation misses for this case: the response looked like
+                # a plain success (200, parseable-looking body), just not one we could use.
+                result = await self._fetch_search_page(url, page, force_proxy=True)
             if result is None:
                 logger.warning("polovniautomobili: page %d skipped after two failed parse attempts (%s)", page, url)
                 self._record(FetchOutcome.PAGE_SKIPPED)

@@ -198,8 +198,10 @@ async def test_iter_search_pages_retries_once_then_skips_unparseable_page(monkey
     adapter = PolovniAutomobiliSource(proxy_provider=FakeProxyProvider(), outcome_sink=outcomes.append, max_pages=3)
 
     parsed_urls: list[str] = []
+    force_proxy_flags: list[bool] = []
 
-    async def fake_fetch(url: str) -> str:
+    async def fake_fetch(url: str, *, force_proxy: bool = False) -> str:
+        force_proxy_flags.append(force_proxy)
         return url
 
     def fake_parse(html: str) -> tuple[list, int]:
@@ -223,6 +225,8 @@ async def test_iter_search_pages_retries_once_then_skips_unparseable_page(monkey
         FetchOutcome.PARSER_ERROR,
         FetchOutcome.PAGE_SKIPPED,
     ]
+    # The retry (page 1's second attempt) went through the proxy; nothing else did.
+    assert force_proxy_flags == [False, True, False]
 
 
 async def test_iter_search_pages_recovers_if_retry_parses_successfully(monkeypatch):
@@ -237,7 +241,7 @@ async def test_iter_search_pages_recovers_if_retry_parses_successfully(monkeypat
         production_year=2019, mileage_km=1, price=1, currency="EUR",
     )
 
-    async def fake_fetch(url: str) -> str:
+    async def fake_fetch(url: str, *, force_proxy: bool = False) -> str:
         return url
 
     def fake_parse(html: str) -> tuple[list, int]:
@@ -271,7 +275,7 @@ async def test_iter_search_pages_anchors_page_count_to_first_page(monkeypatch, c
         production_year=2019, mileage_km=1, price=1, currency="EUR",
     )
 
-    async def fake_fetch(url: str) -> str:
+    async def fake_fetch(url: str, *, force_proxy: bool = False) -> str:
         return url
 
     def fake_parse(html: str) -> tuple[list, int]:
