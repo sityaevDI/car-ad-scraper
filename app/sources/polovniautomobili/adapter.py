@@ -4,6 +4,7 @@ instead of the original PoC's (now-stale) CSS selectors.
 """
 
 import json
+import logging
 import re
 from collections.abc import AsyncIterator, Callable
 from typing import TypeVar
@@ -19,6 +20,8 @@ from app.sources.polovniautomobili.mapper import BASE_URL, map_product_data, map
 from scraping.translation import fuel_type_codes
 
 _T = TypeVar("_T")
+
+logger = logging.getLogger(__name__)
 
 _NEXT_DATA_RE = re.compile(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', re.S)
 _FUEL_CODE_BY_NORMALIZED = {normalize_fuel_type(raw): code for code, raw in fuel_type_codes.items()}
@@ -137,7 +140,7 @@ class PolovniAutomobiliSource:
         result = await self.fetcher.fetch(url)
         return raise_for_blocked(result, url)
 
-    async def _fetch_search_page(self, url: str) -> tuple[list[SourceListing], int] | None:
+    async def _fetch_search_page(self, url: str, page: int) -> tuple[list[SourceListing], int] | None:
         """One fetch+parse attempt for a search page. Returns None (rather than raising) on a
         parse failure, so `_iter_search_pages` can retry or skip the page instead of aborting the
         whole crawl — a fetch failure (FetchBlockedError, or the RuntimeError raise_for_blocked
@@ -147,27 +150,51 @@ class PolovniAutomobiliSource:
         html = await self._fetch(url)
         try:
             return self._guard_parse(self.parse_search_page, html)
-        except ParserError:
+        except ParserError as exc:
+            logger.warning("polovniautomobili: page %d failed to parse (%s): %s", page, url, exc)
             return None
 
     async def _iter_search_pages(self, query: SearchQuery) -> AsyncIterator[SourceListing]:
+        # `page_count` is anchored to whatever page 1 reports and held fixed for the rest of the
+        # crawl, instead of re-trusting it fresh off every page's own response. The site is
+        # supposed to report the same total on every page of one search, but a 2026-09-11
+        # FULL_SOURCE_REFRESH ended at page ~179 instead of the ~2992 the site actually had:
+        # every fetch still classified FetchOutcome.SUCCESS (no 403/429/captcha — see
+        # app/scraping/fetch_outcome.py, so proxy fallback never triggered either), just with a
+        # shrunk pageCount on a later page, and `if page >= page_count: break` took that at face
+        # value and ended the run early. Page 1 is the one page a human can cross-check (the "od
+        # X do Y oglasa od ukupno Z" counter rendered on the page itself), so it's the one value
+        # trusted as the loop bound; a later page disagreeing is logged instead of obeyed.
         page = 1
+        total_page_count: int | None = None
         while page <= self.max_pages:
             url = self.build_search_url(query, page)
-            result = await self._fetch_search_page(url)
+            result = await self._fetch_search_page(url, page)
             if result is None:
                 # One retry: a parse failure could be a transient odd response. A second
                 # consecutive failure means this page really can't be parsed — skip it and keep
                 # crawling the rest of the source rather than losing everything after it.
-                result = await self._fetch_search_page(url)
+                result = await self._fetch_search_page(url, page)
             if result is None:
+                logger.warning("polovniautomobili: page %d skipped after two failed parse attempts (%s)", page, url)
                 self._record(FetchOutcome.PAGE_SKIPPED)
                 page += 1
                 continue
             listings, page_count = result
+            if total_page_count is None:
+                total_page_count = page_count
+            elif page_count != total_page_count:
+                logger.warning(
+                    "polovniautomobili: page %d reports pageCount=%d, page 1 reported %d (%s) — "
+                    "using page 1's count",
+                    page,
+                    page_count,
+                    total_page_count,
+                    url,
+                )
             for listing in listings:
                 yield listing
-            if page >= page_count:
+            if page >= total_page_count:
                 break
             page += 1
 
