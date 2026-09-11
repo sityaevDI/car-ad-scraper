@@ -198,8 +198,10 @@ async def test_iter_search_pages_retries_once_then_skips_unparseable_page(monkey
     adapter = PolovniAutomobiliSource(proxy_provider=FakeProxyProvider(), outcome_sink=outcomes.append, max_pages=3)
 
     parsed_urls: list[str] = []
+    force_proxy_flags: list[bool] = []
 
-    async def fake_fetch(url: str) -> str:
+    async def fake_fetch(url: str, *, force_proxy: bool = False) -> str:
+        force_proxy_flags.append(force_proxy)
         return url
 
     def fake_parse(html: str) -> tuple[list, int]:
@@ -223,6 +225,8 @@ async def test_iter_search_pages_retries_once_then_skips_unparseable_page(monkey
         FetchOutcome.PARSER_ERROR,
         FetchOutcome.PAGE_SKIPPED,
     ]
+    # The retry (page 1's second attempt) went through the proxy; nothing else did.
+    assert force_proxy_flags == [False, True, False]
 
 
 async def test_iter_search_pages_recovers_if_retry_parses_successfully(monkeypatch):
@@ -237,7 +241,7 @@ async def test_iter_search_pages_recovers_if_retry_parses_successfully(monkeypat
         production_year=2019, mileage_km=1, price=1, currency="EUR",
     )
 
-    async def fake_fetch(url: str) -> str:
+    async def fake_fetch(url: str, *, force_proxy: bool = False) -> str:
         return url
 
     def fake_parse(html: str) -> tuple[list, int]:
@@ -255,6 +259,39 @@ async def test_iter_search_pages_recovers_if_retry_parses_successfully(monkeypat
     # at page_count=1 instead of continuing — a transient failure shouldn't cost the crawl a page.
     assert results == [listing]
     assert outcomes == [FetchOutcome.PARSER_ERROR]
+
+
+async def test_iter_search_pages_anchors_page_count_to_first_page(monkeypatch, caplog):
+    """A later page under-reporting pageCount (see the 2026-09-11 incident: a FULL_SOURCE_REFRESH
+    ended at page ~179 instead of the site's actual ~2992, entirely through this loop's own exit
+    condition trusting a shrunk pageCount from a later page) must not cut the crawl short — page
+    1's count is the one held fixed, and a later disagreement is only logged.
+    """
+    from app.search.query import SearchQuery
+
+    adapter = PolovniAutomobiliSource(proxy_provider=FakeProxyProvider(), max_pages=5)
+    listing = SourceListing(
+        external_id="1", canonical_url="https://x/1", title="x", make="Skoda", model="Octavia",
+        production_year=2019, mileage_km=1, price=1, currency="EUR",
+    )
+
+    async def fake_fetch(url: str, *, force_proxy: bool = False) -> str:
+        return url
+
+    def fake_parse(html: str) -> tuple[list, int]:
+        # page 1 reports 4 total pages; every later page under-reports 1 (as if the site quietly
+        # shrank its own count mid-crawl).
+        return [listing], 4 if "page=1&" in html else 1
+
+    monkeypatch.setattr(adapter, "_fetch", fake_fetch)
+    monkeypatch.setattr(adapter, "parse_search_page", fake_parse)
+
+    with caplog.at_level("WARNING"):
+        results = [item async for item in adapter.search_with_data(SearchQuery())]
+
+    # All 4 pages page 1 promised were crawled, not just 1 — page 1's count won.
+    assert results == [listing] * 4
+    assert "reports pageCount=1, page 1 reported 4" in caplog.text
 
 
 async def test_fetch_listing_records_and_raises_parser_error_on_malformed_page(monkeypatch):

@@ -99,6 +99,37 @@ async def test_proxy_http_fetcher_falls_back_to_proxy_when_blocked(monkeypatch):
     assert proxy_provider.failures == []
 
 
+async def test_proxy_http_fetcher_force_proxy_skips_direct_attempt(monkeypatch):
+    proxy_provider = FakeProxyProvider()
+    fetcher = ProxyHttpFetcher(source="polovniautomobili", proxy_provider=proxy_provider)
+    seen_proxies = []
+
+    def fake_get(url, timeout, headers, proxies=None):
+        seen_proxies.append(proxies)
+        return _response(200, "via proxy" if proxies else "direct")
+
+    monkeypatch.setattr(fetcher.session, "get", fake_get)
+
+    result = await fetcher.fetch("https://example.com", force_proxy=True)
+
+    assert result.outcome == FetchOutcome.SUCCESS
+    assert result.text == "via proxy"
+    # Exactly one request was made, and it went through the proxy — no direct attempt at all.
+    assert seen_proxies == [{"http": _PROXY.url, "https": _PROXY.url}]
+    assert len(proxy_provider.successes) == 1
+
+
+async def test_proxy_http_fetcher_force_proxy_falls_back_to_direct_when_no_proxy_available(monkeypatch):
+    proxy_provider = FakeProxyProvider(proxy=None)
+    fetcher = ProxyHttpFetcher(source="polovniautomobili", proxy_provider=proxy_provider)
+    monkeypatch.setattr(fetcher.session, "get", lambda *a, **kw: _response(200, "direct ok"))
+
+    result = await fetcher.fetch("https://example.com", force_proxy=True)
+
+    assert result.outcome == FetchOutcome.SUCCESS
+    assert result.text == "direct ok"
+
+
 async def test_proxy_http_fetcher_reports_failure_when_both_blocked(monkeypatch):
     proxy_provider = FakeProxyProvider()
     fetcher = ProxyHttpFetcher(source="polovniautomobili", proxy_provider=proxy_provider)
