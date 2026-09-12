@@ -78,7 +78,15 @@ class PolovniAutomobiliSource:
             )
 
     def build_search_url(self, query: SearchQuery, page: int = 1) -> str:
-        params: list[tuple[str, str]] = [("page", str(page)), ("sort", "basic")]
+        # "basic" (the site's default relevance-ish order) reshuffles as ads get posted/renewed
+        # while a long multi-page crawl is in flight, so the same ad can land on more than one
+        # page within a single run — each re-encounter gets upserted again and inflates
+        # ScrapeStats.listings_updated without a corresponding new row (see 2026-09-11/12
+        # FULL_SOURCE_REFRESH runs: listings_seen/listings_updated far exceeded the real row
+        # count in `listings`). renew_date_asc sorts stalest-renewed-first, so new posts and
+        # renews only ever get appended at the tail (a page we haven't reached yet) instead of
+        # prepended at page 1 — pages already crawled stay stable underneath us.
+        params: list[tuple[str, str]] = [("page", str(page)), ("sort", "renew_date_asc")]
         if query.make:
             params.append(("brand", query.make))
         for model in query.models or []:
