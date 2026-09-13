@@ -194,6 +194,13 @@ def canonical_url_from_id_title(external_id: str, title: str) -> str:
     return f"{BASE_URL}/auto-oglasi/{external_id}/{slugify(title)}"
 
 
+# Fields map_search_result reads unconditionally (raw["..."], not raw.get("...")) below — a
+# result entry missing any of these can't be turned into a SourceListing at all. adapter.py's
+# parse_search_page checks this before calling map_search_result, so one such entry drops just
+# itself instead of raising and taking its whole page down (see that filter's comment).
+SEARCH_RESULT_REQUIRED_FIELDS = {"id", "title", "brand", "model", "year", "mileage", "price"}
+
+
 def map_search_result(raw: dict) -> SourceListing:
     """Map one entry of `pageProps.searchResults.results` (search/list page)."""
     external_id = str(raw["id"])
