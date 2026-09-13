@@ -16,7 +16,13 @@ from app.scraping.fetch_strategy import FetchStrategy, ProxyHttpFetcher, raise_f
 from app.scraping.proxy import ProxyProvider, get_proxy_provider
 from app.search.query import SearchQuery
 from app.sources.base import SourceListing, SourceListingRef
-from app.sources.polovniautomobili.mapper import BASE_URL, map_product_data, map_search_result, normalize_fuel_type
+from app.sources.polovniautomobili.mapper import (
+    BASE_URL,
+    SEARCH_RESULT_REQUIRED_FIELDS,
+    map_product_data,
+    map_search_result,
+    normalize_fuel_type,
+)
 from scraping.translation import fuel_type_codes
 
 _T = TypeVar("_T")
@@ -131,9 +137,20 @@ class PolovniAutomobiliSource:
         """
         data = _extract_next_data(html)
         search_results = data["props"]["pageProps"]["searchResults"]
-        # "Price on request" listings (no numeric price) can't be grouped/compared and are
-        # dropped rather than stored with a fabricated price.
-        listings = [map_search_result(raw) for raw in search_results["results"] if "price" in raw]
+        # Two reasons an entry gets dropped instead of mapped: "price on request" ads have no
+        # numeric price and can't be grouped/compared, and — reproduced live across several
+        # 2026-09-11/12/13 crawls — some other, rarer ads are simply missing a field entirely
+        # (page 591 of a renew_date_asc crawl consistently 'model'-KeyErrors; earlier runs hit
+        # 'brand' on a different page). Before this filter, one such entry raised inside
+        # map_search_result and took its whole page down (PAGE_SKIPPED — see
+        # _iter_search_pages), losing every other listing on that page and, worse, blocking
+        # mark_missing_as_removed for the entire crawl (see pipeline.run_scrape). Dropping just
+        # the incomplete entries here keeps the rest of the page.
+        listings = [
+            map_search_result(raw)
+            for raw in search_results["results"]
+            if SEARCH_RESULT_REQUIRED_FIELDS.issubset(raw)
+        ]
         return listings, search_results["pageCount"]
 
     def parse_listing(self, html: str) -> SourceListing:

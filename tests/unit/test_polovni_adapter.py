@@ -83,6 +83,42 @@ def test_parse_listing_extracts_full_detail():
     assert all(re.fullmatch(r"[a-z0-9_]+", item) for item in listing.equipment)  # nothing left untranslated
 
 
+def test_parse_search_page_drops_entries_missing_a_required_field():
+    """Reproduced live across several 2026-09-11/12/13 FULL_SOURCE_REFRESH runs: some ad in the
+    site's own search results is missing 'brand' or 'model' entirely (not just blank) — before
+    this filter, that raised inside map_search_result and took its *whole page* down
+    (PAGE_SKIPPED), losing every other listing on the page and blocking mark_missing_as_removed
+    for the entire crawl (see pipeline.run_scrape). One bad entry must only drop itself.
+    """
+    import json
+
+    good = {
+        "id": 1, "title": "Skoda Octavia", "brand": "Škoda", "model": "Octavia", "year": 2019,
+        "mileage": 100_000, "price": 10_000,
+    }
+    missing_model = {k: v for k, v in good.items() if k != "model"} | {"id": 2}
+    html = (
+        '<html><body><script id="__NEXT_DATA__">'
+        + json.dumps(
+            {
+                "props": {
+                    "pageProps": {
+                        "searchResults": {"results": [good, missing_model], "pageCount": 3},
+                    }
+                }
+            }
+        )
+        + "</script></body></html>"
+    )
+    adapter = PolovniAutomobiliSource()
+
+    listings, page_count = adapter.parse_search_page(html)
+
+    assert page_count == 3
+    assert len(listings) == 1
+    assert listings[0].external_id == "1"
+
+
 def test_parse_search_page_does_not_include_equipment():
     html = (FIXTURES / "search_page_01.html").read_text(encoding="utf-8")
     adapter = PolovniAutomobiliSource()
