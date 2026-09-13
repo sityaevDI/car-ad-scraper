@@ -40,6 +40,14 @@ class PolovniAutomobiliSource:
     domain = "polovniautomobili.com"
     country = "RS"
 
+    # Verified 2026-09-13 by paging a plain browser session (no scraper involved): page 751+ of
+    # any search silently re-renders page 1's own listings while the URL keeps the requested
+    # ?page=N — a hard, sort-independent depth cap on how far one query can be paged, not
+    # proxy/IP blocking. A query with more results than this needs splitting into narrower
+    # sub-queries first — see app/scraping/query_partitioning.py, which reads this attribute (and
+    # calls probe_page_count below) to do that automatically for a query that needs it.
+    max_crawlable_pages = 750
+
     def __init__(
         self,
         timeout: int = 15,
@@ -178,6 +186,21 @@ class PolovniAutomobiliSource:
         page = 1
         total_page_count: int | None = None
         while page <= self.max_pages:
+            if page > self.max_crawlable_pages:
+                # Past this, the site just re-serves page 1's own listings under the requested
+                # ?page=N (see max_crawlable_pages above) — grinding on to self.max_pages would
+                # only re-upsert those same listings over and over. A query that needs pages
+                # beyond here should have been split into narrower sub-queries before reaching
+                # this adapter at all (app/scraping/query_partitioning.py); this is a last-resort
+                # backstop for a query that wasn't.
+                logger.warning(
+                    "polovniautomobili: stopping at page %d — beyond the site's %d-page crawl "
+                    "depth cap; this query needs splitting into narrower sub-queries to see the "
+                    "rest (see app/scraping/query_partitioning.py)",
+                    page,
+                    self.max_crawlable_pages,
+                )
+                break
             url = self.build_search_url(query, page)
             result = await self._fetch_search_page(url, page)
             if result is None:
@@ -211,6 +234,20 @@ class PolovniAutomobiliSource:
             if page >= total_page_count:
                 break
             page += 1
+
+    async def probe_page_count(self, query: SearchQuery) -> int:
+        """Total page count for `query` without crawling it — one page-1 fetch (retried once via
+        proxy on a parse failure, same as _iter_search_pages above). Used by
+        app/scraping/query_partitioning.py to size a bracket before committing to crawling it.
+        """
+        url = self.build_search_url(query, page=1)
+        result = await self._fetch_search_page(url, page=1)
+        if result is None:
+            result = await self._fetch_search_page(url, page=1, force_proxy=True)
+        if result is None:
+            raise ParserError(f"could not determine page count for {url}")
+        _listings, page_count = result
+        return page_count
 
     async def search(self, query: SearchQuery) -> AsyncIterator[SourceListingRef]:
         async for listing in self._iter_search_pages(query):

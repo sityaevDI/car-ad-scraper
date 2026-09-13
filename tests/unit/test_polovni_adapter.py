@@ -294,6 +294,81 @@ async def test_iter_search_pages_anchors_page_count_to_first_page(monkeypatch, c
     assert "reports pageCount=1, page 1 reported 4" in caplog.text
 
 
+async def test_iter_search_pages_stops_at_the_crawlable_depth_cap(monkeypatch, caplog):
+    """Past max_crawlable_pages the site silently re-serves page 1's own listings under whatever
+    ?page=N was requested (verified live 2026-09-13) — grinding on to max_pages would just
+    re-upsert those same listings over and over, so the loop must stop at the cap instead.
+    """
+    from app.search.query import SearchQuery
+
+    adapter = PolovniAutomobiliSource(proxy_provider=FakeProxyProvider(), max_pages=5)
+    adapter.max_crawlable_pages = 2
+    listing = SourceListing(
+        external_id="1", canonical_url="https://x/1", title="x", make="Skoda", model="Octavia",
+        production_year=2019, mileage_km=1, price=1, currency="EUR",
+    )
+
+    async def fake_fetch(url: str, *, force_proxy: bool = False) -> str:
+        return url
+
+    def fake_parse(html: str) -> tuple[list, int]:
+        return [listing], 5  # page 1 reports 5 total pages — well past the cap of 2
+
+    monkeypatch.setattr(adapter, "_fetch", fake_fetch)
+    monkeypatch.setattr(adapter, "parse_search_page", fake_parse)
+
+    with caplog.at_level("WARNING"):
+        results = [item async for item in adapter.search_with_data(SearchQuery())]
+
+    # Only pages 1 and 2 (the cap) were crawled, not all 5 pageCount promised.
+    assert results == [listing] * 2
+    assert "beyond the site's 2-page crawl depth cap" in caplog.text
+
+
+async def test_probe_page_count_returns_page_count_without_yielding_listings(monkeypatch):
+    from app.search.query import SearchQuery
+
+    adapter = PolovniAutomobiliSource(proxy_provider=FakeProxyProvider())
+    listing = SourceListing(
+        external_id="1", canonical_url="https://x/1", title="x", make="Skoda", model="Octavia",
+        production_year=2019, mileage_km=1, price=1, currency="EUR",
+    )
+
+    async def fake_fetch(url: str, *, force_proxy: bool = False) -> str:
+        return url
+
+    monkeypatch.setattr(adapter, "_fetch", fake_fetch)
+    monkeypatch.setattr(adapter, "parse_search_page", lambda html: ([listing], 137))
+
+    page_count = await adapter.probe_page_count(SearchQuery(price_min=1000))
+
+    assert page_count == 137
+
+
+async def test_probe_page_count_retries_via_proxy_then_raises_if_still_unparseable(monkeypatch):
+    from app.search.query import SearchQuery
+
+    adapter = PolovniAutomobiliSource(proxy_provider=FakeProxyProvider())
+
+    force_proxy_flags: list[bool] = []
+
+    async def fake_fetch(url: str, *, force_proxy: bool = False) -> str:
+        force_proxy_flags.append(force_proxy)
+        return url
+
+    def fake_parse(html: str) -> tuple[list, int]:
+        raise ValueError("unexpected page shape")
+
+    monkeypatch.setattr(adapter, "_fetch", fake_fetch)
+    monkeypatch.setattr(adapter, "parse_search_page", fake_parse)
+
+    with pytest.raises(ParserError):
+        await adapter.probe_page_count(SearchQuery())
+
+    # One direct attempt, one forced through the proxy — same retry shape as a real crawl's pages.
+    assert force_proxy_flags == [False, True]
+
+
 async def test_fetch_listing_records_and_raises_parser_error_on_malformed_page(monkeypatch):
     outcomes: list[FetchOutcome] = []
     adapter = PolovniAutomobiliSource(proxy_provider=FakeProxyProvider(), outcome_sink=outcomes.append)
