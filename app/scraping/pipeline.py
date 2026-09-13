@@ -14,6 +14,7 @@ from app.models.listing import Listing
 from app.models.source import Source
 from app.scraping.fetch_outcome import FetchBlockedError, FetchOutcome, OutcomeCounter, ParserError
 from app.scraping.proxy import ProxyProvider
+from app.scraping.query_partitioning import partition_query
 from app.scraping.rate_limit import get_scrape_rate_limit
 from app.search.query import SearchQuery
 from app.sources.base import CarSource, SourceListing, SourceListingRef
@@ -122,30 +123,38 @@ async def run_scrape(
     )
     repository = ListingRepository(session)
 
+    # A no-op ([query]) for a source that hasn't hit this problem (see query_partitioning.py's
+    # module docstring) — only bothers probing/splitting once max_pages would actually risk paging
+    # past the source's known crawl depth.
+    partitions = await partition_query(adapter, query, max_pages)
+
     stats = ScrapeStats()
     try:
-        async for source_listing in _search_listings(adapter, query):
-            stats.listings_seen += 1
-            stats.seen_external_ids.add(source_listing.external_id)
-            listing, is_new, previous_price = await repository.upsert_listing(source.id, source_listing)
-            if is_new:
-                stats.listings_created += 1
-                stats.new_listing_ids.append(listing.id)
-                await _enrich_with_equipment(adapter, repository, listing)
-            else:
-                stats.listings_updated += 1
-                if previous_price is not None and previous_price > listing.price:
-                    stats.price_drops.append((listing.id, previous_price, listing.price))
+        for sub_query in partitions:
+            async for source_listing in _search_listings(adapter, sub_query):
+                stats.listings_seen += 1
+                stats.seen_external_ids.add(source_listing.external_id)
+                listing, is_new, previous_price = await repository.upsert_listing(source.id, source_listing)
+                if is_new:
+                    stats.listings_created += 1
+                    stats.new_listing_ids.append(listing.id)
+                    await _enrich_with_equipment(adapter, repository, listing)
+                else:
+                    stats.listings_updated += 1
+                    if previous_price is not None and previous_price > listing.price:
+                        stats.price_drops.append((listing.id, previous_price, listing.price))
 
-            if stats.listings_seen % _COMMIT_BATCH_SIZE == 0:
-                await session.commit()
+                if stats.listings_seen % _COMMIT_BATCH_SIZE == 0:
+                    await session.commit()
     except (FetchBlockedError, ParserError) as exc:
         # Stop pagination early but keep whatever was already upserted this run — a partial
-        # result is more useful than losing it. FetchBlockedError means the source just told us
-        # to back off (burning further proxy/direct requests would be wasteful); ParserError here
-        # means the adapter itself gave up on retrying (see PolovniAutomobiliSource._fetch_listing
-        # /fetch_listing, which still raise immediately — only the search-page loop retries and
-        # skips instead of raising).
+        # result is more useful than losing it. This ends the whole partitioned crawl, not just
+        # the bracket that was mid-flight: an error here means the source itself is unhappy, and
+        # every remaining bracket would likely hit the same wall. FetchBlockedError means the
+        # source just told us to back off (burning further proxy/direct requests would be
+        # wasteful); ParserError here means the adapter itself gave up on retrying (see
+        # PolovniAutomobiliSource._fetch_listing/fetch_listing, which still raise immediately —
+        # only the search-page loop retries and skips instead of raising).
         stats.blocked = True
         stats.error_detail = str(exc)
 
