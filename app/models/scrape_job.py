@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Uuid
+from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Index, Uuid, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -31,6 +31,23 @@ class ScrapeJobStatus(str, enum.Enum):
 
 class ScrapeJob(UUIDPkMixin, TimestampMixin, Base):
     __tablename__ = "scrape_jobs"
+    __table_args__ = (
+        # Two concurrent run_scrape calls against the same source race to UPDATE overlapping
+        # Listing rows in whatever order each happens to encounter them and can deadlock each
+        # other in Postgres — reproduced in production 2026-09-13. This makes "only one RUNNING
+        # job per source" a DB-enforced invariant instead of an app-level convention nothing was
+        # checking; see app/scraping/worker.py's run_scrape_job for how the resulting
+        # IntegrityError is handled (the losing job just fails fast instead of racing).
+        # 'RUNNING' (the enum member's name), not 'running' (.value) — Enum(native_enum=False)
+        # stores the member name by default.
+        Index(
+            "uq_scrape_jobs_one_running_per_source",
+            "source_id",
+            unique=True,
+            postgresql_where=text("status = 'RUNNING'"),
+            sqlite_where=text("status = 'RUNNING'"),
+        ),
+    )
 
     source_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("sources.id"), nullable=False)
     job_type: Mapped[ScrapeJobType] = mapped_column(Enum(ScrapeJobType, native_enum=False, length=32), nullable=False)

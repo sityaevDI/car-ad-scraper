@@ -12,6 +12,7 @@ from typing import Any
 
 from arq import cron, func
 from arq.connections import RedisSettings
+from sqlalchemy.exc import IntegrityError
 
 from app.auth.email import get_email_sender
 from app.config import get_settings
@@ -70,7 +71,30 @@ async def run_scrape_job(ctx: dict[str, Any], job_id: str) -> None:
 
         job.status = ScrapeJobStatus.RUNNING
         job.started_at = datetime.now(timezone.utc)
-        await session.commit()
+        try:
+            await session.commit()
+        except IntegrityError:
+            # uq_scrape_jobs_one_running_per_source (migrations/c4d5e6f7a8b9): another job for
+            # this same source is already RUNNING. Two concurrent crawls of one source can
+            # deadlock each other in Postgres — UPDATEing overlapping Listing rows in whatever
+            # order each happens to encounter them — reproduced in production 2026-09-13. Losing
+            # this race is expected and fine: the schedule/saved-search cron that created this job
+            # already advanced its own next-run time regardless of whether the job succeeds (see
+            # scheduler.py), so it'll simply try again next interval once the other crawl is done.
+            await session.rollback()
+            # rollback() expires every attribute on `job` — touching any of them (even just to
+            # read source_id for the message below) without reloading first raises
+            # MissingGreenlet, since the lazy-reload it'd trigger can't run mid-flush here.
+            job = await session.get(ScrapeJob, uuid.UUID(job_id))
+            assert job is not None
+            job.status = ScrapeJobStatus.FAILED
+            job.error = {
+                "type": "ConcurrentScrapeError",
+                "message": f"Another job for source {job.source_id} is already running",
+            }
+            job.finished_at = datetime.now(timezone.utc)
+            await session.commit()
+            return
 
         source = await session.get(Source, job.source_id)
         assert source is not None
