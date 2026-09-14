@@ -105,26 +105,33 @@ class PolovniAutomobiliSource:
             params.append(("brand", query.make))
         for model in query.models or []:
             params.append(("model[]", model))
+        # camelCase, not snake_case: verified live 2026-09-14 that priceFrom/priceTo etc. and
+        # price_from/price_to both apply the filter (same pageCount either way), but only the
+        # camelCase form actually pages past page 1 — with the snake_case names every page from
+        # 2 on silently re-serves page 1's own results, the same failure mode as
+        # max_crawlable_pages above but starting at page 2 instead of page 751. This affects any
+        # filtered crawl, not just query_partitioning's price/year brackets — a SAVED_SEARCH or
+        # SEARCH job filtering on any of these previously only ever saw its first page.
         if query.price_min is not None:
-            params.append(("price_from", str(query.price_min)))
+            params.append(("priceFrom", str(query.price_min)))
         if query.price_max is not None:
-            params.append(("price_to", str(query.price_max)))
+            params.append(("priceTo", str(query.price_max)))
         if query.year_min is not None:
-            params.append(("year_from", str(query.year_min)))
+            params.append(("yearFrom", str(query.year_min)))
         if query.year_max is not None:
-            params.append(("year_to", str(query.year_max)))
+            params.append(("yearTo", str(query.year_max)))
         if query.mileage_min is not None:
-            params.append(("mileage_from", str(query.mileage_min)))
+            params.append(("mileageFrom", str(query.mileage_min)))
         if query.mileage_max is not None:
-            params.append(("mileage_to", str(query.mileage_max)))
+            params.append(("mileageTo", str(query.mileage_max)))
         if query.engine_volume_min is not None:
-            params.append(("engine_volume_from", str(query.engine_volume_min)))
+            params.append(("engineVolumeFrom", str(query.engine_volume_min)))
         if query.engine_volume_max is not None:
-            params.append(("engine_volume_to", str(query.engine_volume_max)))
+            params.append(("engineVolumeTo", str(query.engine_volume_max)))
         if query.power_min is not None:
-            params.append(("power_from", str(query.power_min)))
+            params.append(("powerFrom", str(query.power_min)))
         if query.power_max is not None:
-            params.append(("power_to", str(query.power_max)))
+            params.append(("powerTo", str(query.power_max)))
         for fuel in query.fuel_types or []:
             code = _FUEL_CODE_BY_NORMALIZED.get(fuel)
             if code is not None:

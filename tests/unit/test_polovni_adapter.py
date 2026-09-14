@@ -151,8 +151,48 @@ def test_build_search_url_includes_filters():
     assert "page=2" in url
     assert "brand=Skoda" in url
     assert "model%5B%5D=Octavia" in url
-    assert "price_to=15000" in url
-    assert "year_from=2018" in url
+    assert "priceTo=15000" in url
+    assert "yearFrom=2018" in url
+
+
+def test_build_search_url_uses_camel_case_for_every_range_filter():
+    """Verified live 2026-09-14: the site applies price_from/mileage_from/etc. (snake_case) as a
+    filter just fine, but only paginates correctly past page 1 with the camelCase names it
+    actually expects (priceFrom, mileageFrom, ...) — snake_case silently re-serves page 1's own
+    results on every later page. One bad param name per filter, so cover all five here.
+    """
+    from app.search.query import SearchQuery
+
+    adapter = PolovniAutomobiliSource()
+    url = adapter.build_search_url(
+        SearchQuery(
+            price_min=1000,
+            price_max=5000,
+            year_min=2015,
+            year_max=2020,
+            mileage_min=10_000,
+            mileage_max=50_000,
+            engine_volume_min=1000,
+            engine_volume_max=2000,
+            power_min=50,
+            power_max=150,
+        )
+    )
+
+    for expected in (
+        "priceFrom=1000", "priceTo=5000",
+        "yearFrom=2015", "yearTo=2020",
+        "mileageFrom=10000", "mileageTo=50000",
+        "engineVolumeFrom=1000", "engineVolumeTo=2000",
+        "powerFrom=50", "powerTo=150",
+    ):
+        assert expected in url
+    for unexpected in (
+        "price_from", "price_to", "year_from", "year_to",
+        "mileage_from", "mileage_to", "engine_volume_from", "engine_volume_to",
+        "power_from", "power_to",
+    ):
+        assert unexpected not in url
 
 
 async def test_fetch_direct_success_never_touches_proxy(monkeypatch):
