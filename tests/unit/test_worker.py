@@ -83,6 +83,36 @@ async def test_run_scrape_job_marks_completed_on_success(worker_session_factory,
         assert job.finished_at is not None
 
 
+async def test_run_scrape_job_fails_fast_when_another_job_for_the_source_is_already_running(
+    worker_session_factory, monkeypatch
+):
+    """uq_scrape_jobs_one_running_per_source (app/models/scrape_job.py) exists because two
+    concurrent crawls of the same source can deadlock each other in Postgres UPDATEing
+    overlapping Listing rows — reproduced in production 2026-09-13. The losing job should fail
+    fast with a clear reason instead of ever reaching run_scrape and racing the other one.
+    """
+    await _seed_job(worker_session_factory, status=ScrapeJobStatus.RUNNING)
+    second_job_id = await _seed_job(worker_session_factory)
+
+    run_scrape_calls = []
+
+    async def fake_run_scrape(session, source_code, query, max_pages=5, proxy_provider=None, mark_removed=False):
+        run_scrape_calls.append(1)
+        return ScrapeStats()
+
+    monkeypatch.setattr(worker_module, "run_scrape", fake_run_scrape)
+
+    ctx = {"session_factory": worker_session_factory, "proxy_provider": NullProxyProvider()}
+    await worker_module.run_scrape_job(ctx, str(second_job_id))
+
+    assert run_scrape_calls == []
+    async with worker_session_factory() as session:
+        job = await session.get(ScrapeJob, second_job_id)
+        assert job.status == ScrapeJobStatus.FAILED
+        assert job.error["type"] == "ConcurrentScrapeError"
+        assert job.finished_at is not None
+
+
 async def test_run_scrape_job_marks_partial_when_blocked(worker_session_factory, monkeypatch):
     job_id = await _seed_job(worker_session_factory)
 
