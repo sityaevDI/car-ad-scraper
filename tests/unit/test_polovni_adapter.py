@@ -81,6 +81,9 @@ def test_parse_listing_extracts_full_detail():
     assert "apple_carplay" in listing.equipment
     assert "adaptive_cruise_control" in listing.equipment
     assert all(re.fullmatch(r"[a-z0-9_]+", item) for item in listing.equipment)  # nothing left untranslated
+    # interior_material is translated too (see mapper._INTERIOR_MATERIAL_NORMALIZED) — this
+    # fixture's raw productData.interiorMaterial is "Štof"
+    assert listing.interior_material == "cloth"
 
 
 def test_parse_search_page_drops_entries_missing_a_required_field():
@@ -127,6 +130,18 @@ def test_parse_search_page_does_not_include_equipment():
 
     # The search/results page JSON simply doesn't carry `equipment` — see mapper.py's docstring.
     assert all(listing.equipment == [] for listing in listings)
+
+
+def test_parse_search_page_does_not_include_interior_material():
+    html = (FIXTURES / "search_page_01.html").read_text(encoding="utf-8")
+    adapter = PolovniAutomobiliSource()
+
+    listings, _ = adapter.parse_search_page(html)
+
+    # map_search_result doesn't read `interiorMaterial` — the search/results page only ever
+    # carries it (as a prefixed display string, not the clean value) inside a premium listing's
+    # `featuredInfo`, not as a plain per-listing field like fuel/chassis/gearBox. See mapper.py.
+    assert all(listing.interior_material is None for listing in listings)
 
 
 def test_fetcher_is_configured_from_settings():

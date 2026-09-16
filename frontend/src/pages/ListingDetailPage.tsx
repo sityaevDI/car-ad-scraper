@@ -7,10 +7,13 @@ import { StatusBadge } from '../components/StatusBadge'
 import { ApiError } from '../lib/client'
 import { formatDate, formatMileage, formatPrice } from '../lib/format'
 import { listingsApi } from '../lib/listings'
-import { BODY_TYPE_OPTIONS, FUEL_TYPE_OPTIONS, TRANSMISSION_OPTIONS } from '../search/constants'
+import { BODY_TYPE_OPTIONS, FUEL_TYPE_OPTIONS, INTERIOR_MATERIAL_OPTIONS, TRANSMISSION_OPTIONS } from '../search/constants'
 
 const TAG_LABELS = new Map<string, string>(
-  [...FUEL_TYPE_OPTIONS, ...TRANSMISSION_OPTIONS, ...BODY_TYPE_OPTIONS].map((o) => [o.value, o.label]),
+  [...FUEL_TYPE_OPTIONS, ...TRANSMISSION_OPTIONS, ...BODY_TYPE_OPTIONS, ...INTERIOR_MATERIAL_OPTIONS].map((o) => [
+    o.value,
+    o.label,
+  ]),
 )
 
 function tag(value: string | null): string {
@@ -124,6 +127,7 @@ export function ListingDetailPage() {
               <Field label="Топливо" value={tag(listing.fuel_type)} />
               <Field label="КПП" value={tag(listing.transmission)} />
               <Field label="Кузов" value={tag(listing.body_type)} />
+              <Field label="Материал салона" value={tag(listing.interior_material)} />
               <Field label="Объём двигателя" value={listing.engine_volume_cc ? `${listing.engine_volume_cc} см³` : '—'} />
               <Field label="Мощность" value={listing.power_hp ? `${listing.power_hp} л.с.` : '—'} />
               <Field label="Локация" value={listing.location ?? '—'} />

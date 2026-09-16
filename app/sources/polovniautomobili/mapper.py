@@ -32,6 +32,19 @@ _FUEL_TYPE_NORMALIZED = {
     "Benzin + Metan (CNG)": "cng",
 }
 
+# Keys are the raw Serbian values from `productData.interiorMaterial` (detail page only — like
+# `equipment`, the search-results page doesn't reliably carry this field; see map_product_data
+# and app/scraping/pipeline.py's `_enrich_with_detail`). Matches the site's own facet values
+# (cloth/leather/combinedLeather/velor/other), confirmed against tests/fixtures/polovniautomobili/
+# search_page_01.html's interiorMaterial filter definition.
+_INTERIOR_MATERIAL_NORMALIZED = {
+    "Štof": "cloth",
+    "Prirodna koža": "leather",
+    "Kombinovana koža": "combined_leather",
+    "Velur": "velour",
+    "Drugi": "other",
+}
+
 _BODY_TYPE_NORMALIZED = {
     "Limuzina": "sedan",
     "Karavan": "wagon",
@@ -172,6 +185,12 @@ def normalize_body_type(raw: str | None) -> str | None:
     return _BODY_TYPE_NORMALIZED.get(raw, raw)
 
 
+def normalize_interior_material(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    return _INTERIOR_MATERIAL_NORMALIZED.get(raw, raw)
+
+
 def normalize_equipment(raw: list[str] | None) -> list[str]:
     if not raw:
         return []
@@ -257,5 +276,6 @@ def map_product_data(raw: dict, canonical_path: str | None = None) -> SourceList
         seller_type="dealer" if "ROLE_DEALER" in raw.get("owner", {}).get("roles", []) else "private",
         image_url=_primary_image_url(raw.get("images")),
         equipment=normalize_equipment(raw.get("equipment")),
+        interior_material=normalize_interior_material(raw.get("interiorMaterial")),
         raw=raw,
     )

@@ -40,7 +40,7 @@ _ARQ_HARD_TIMEOUT_SECONDS = 24 * 60 * 60
 # Romeo" — both silently cancelled mid-crawl and left stuck at RUNNING forever).
 #
 # Worst case per page is 1 search-page fetch + one equipment-detail fetch per listing on that page
-# (every listing turns out to be brand new — see pipeline.py's _enrich_with_equipment). 25 matches
+# (every listing turns out to be brand new — see pipeline.py's _enrich_with_detail). 25 matches
 # the resultsPerPage Polovni Automobili actually returns (tests/fixtures/polovniautomobili/
 # search_page_01.html) — not load-bearing on real scraping behavior, just the assumption this
 # estimate is built on. Each of those requests is paced up to delay+jitter apart. The floor keeps

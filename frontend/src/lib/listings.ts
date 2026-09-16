@@ -17,6 +17,7 @@ export interface ListingOut {
   fuel_type: string | null
   transmission: string | null
   body_type: string | null
+  interior_material: string | null
   engine_volume_cc: number | null
   power_hp: number | null
   location: string | null

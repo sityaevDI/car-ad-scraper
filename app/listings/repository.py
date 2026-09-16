@@ -129,6 +129,12 @@ class ListingRepository:
         """
         listing.equipment = equipment
 
+    def set_interior_material(self, listing: Listing, interior_material: str | None) -> None:
+        """Same one-time detail-page backfill as set_equipment, for the same reason (search-page
+        results don't reliably carry it) — see app/scraping/pipeline.py's `_enrich_with_detail`.
+        """
+        listing.interior_material = interior_material
+
     async def mark_missing_as_removed(self, source_id: uuid.UUID, seen_external_ids: set[str]) -> int:
         """Mark active listings for a source that were not encountered in the latest crawl as
         removed. Never deletes rows — see docs/adr/17_AGENT_INSTRUCTIONS.md.

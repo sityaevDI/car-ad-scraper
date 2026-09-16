@@ -39,6 +39,7 @@ class SourceListing:
     fuel_type: str | None = None
     transmission: str | None = None
     body_type: str | None = None
+    interior_material: str | None = None
     engine_volume_cc: int | None = None
     power_hp: int | None = None
     location: str | None = None
