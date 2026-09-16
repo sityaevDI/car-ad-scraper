@@ -323,6 +323,28 @@ async def test_run_scrape_backfills_equipment_once_on_creation(session, monkeypa
     assert adapter_cls.fetch_listing_calls == ["1"]
 
 
+async def test_run_scrape_survives_equipment_fetch_timeout(session, monkeypatch):
+    """Regression test alongside the polovni adapter's own (2026-09-15 incident): the equipment
+    backfill fetch for a brand-new listing is best-effort, so a RuntimeError from it (the
+    catch-all raise_for_blocked uses for TIMEOUT/SERVER_ERROR — see fetch_strategy.py) must not
+    fail the whole crawl, same as the already-handled FetchBlockedError/ParserError cases.
+    """
+
+    class _TimingOutEquipmentAdapter(StubAdapter):
+        external_ids = ["1"]
+
+        async def fetch_listing(self, ref: SourceListingRef) -> SourceListing:
+            raise RuntimeError(f"Fetch failed for {ref.url}: timeout (ReadTimeout: read timeout=15)")
+
+    monkeypatch.setitem(registry.SOURCE_REGISTRY, "stub_source", _TimingOutEquipmentAdapter)
+
+    stats = await run_scrape(session, source_code="stub_source", query=SearchQuery())
+
+    assert stats.blocked is False
+    listing = (await session.execute(select(Listing))).scalar_one()
+    assert not listing.equipment
+
+
 async def test_run_scrape_passes_admin_configured_rate_limit_to_adapter(session, monkeypatch):
     """The delay/jitter/network_error_retry_delay an admin sets via /api/v1/scrape/rate-limit
     (app/scraping/rate_limit.py's ScrapeRateLimit row) must reach the adapter constructor, not
