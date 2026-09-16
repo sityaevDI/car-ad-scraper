@@ -24,7 +24,11 @@ from app.notifications.matching import generate_notifications_for_job
 from app.scraping.pipeline import run_scrape
 from app.scraping.proxy import get_proxy_provider
 from app.scraping.rate_limit import get_scrape_rate_limit
-from app.scraping.scheduler import run_due_saved_search_scrapes, run_due_scheduled_scrapes
+from app.scraping.scheduler import (
+    recompute_dirty_market_segments,
+    run_due_saved_search_scrapes,
+    run_due_scheduled_scrapes,
+)
 from app.scraping.schemas import decode_job_query
 
 # arq's own ceiling on the whole run_scrape_job call (it wraps every job in its own
@@ -165,6 +169,10 @@ async def run_scrape_job(ctx: dict[str, Any], job_id: str) -> None:
 
 class WorkerSettings:
     functions = [func(run_scrape_job, timeout=_ARQ_HARD_TIMEOUT_SECONDS), send_notification_email]
-    cron_jobs = [cron(run_due_scheduled_scrapes, second=0), cron(run_due_saved_search_scrapes, second=0)]
+    cron_jobs = [
+        cron(run_due_scheduled_scrapes, second=0),
+        cron(run_due_saved_search_scrapes, second=0),
+        cron(recompute_dirty_market_segments, second=0),
+    ]
     on_startup = _on_startup
     redis_settings = RedisSettings.from_dsn(get_settings().redis_url)

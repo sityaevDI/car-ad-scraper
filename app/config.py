@@ -66,6 +66,30 @@ class Settings(BaseSettings):
     scrape_request_jitter_seconds: float = 0.4
     scrape_network_error_retry_delay_seconds: float = 5.0
 
+    # Market price calculation (#16/#18/#19, docs/adr/06_SEARCH_MARKET.md). Same lazy-seed pattern
+    # as scrape_request_* above — these only seed app/models/market.py's singleton MarketConfig
+    # row the first time it's read (see app/market/config.py); after that the DB row is the
+    # source of truth and an admin can retune it live via /api/v1/market/config.
+    market_min_sample_size: int = 5
+    market_mileage_bucket_km: int = 20_000
+    market_outlier_iqr_multiplier: float = 1.5
+    # Price score (#18) 5-tier label: |deviation_pct| under the "market" band is labeled "market";
+    # between the two bands is "below"/"above"; beyond the "significant" band is "significantly
+    # below"/"significantly above".
+    market_deviation_market_band_pct: float = 5.0
+    market_deviation_significant_band_pct: float = 15.0
+    # Confidence tiers (docs/adr/06_SEARCH_MARKET.md §7), keyed by filtered (post-outlier-removal)
+    # sample size. Below market_min_sample_size, confidence is "insufficient" and no estimate is
+    # shown at all.
+    market_confidence_medium_min_sample: int = 15
+    market_confidence_high_min_sample: int = 40
+    # A tier is downgraded one step when the filtered price range is this wide relative to the
+    # estimate — "high confidence, huge spread" would otherwise be a misleading combination.
+    market_confidence_high_dispersion_ratio: float = 0.25
+    # Cap on the summed equipment adjustment (see app/market/pricing.py) so one listing's option
+    # list can't push its equipment-adjusted reference price absurdly far from the segment estimate.
+    market_max_equipment_adjustment_pct: float = 15.0
+
 
 @lru_cache
 def get_settings() -> Settings:

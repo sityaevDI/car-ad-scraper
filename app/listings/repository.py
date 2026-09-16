@@ -135,23 +135,26 @@ class ListingRepository:
         """
         listing.interior_material = interior_material
 
-    async def mark_missing_as_removed(self, source_id: uuid.UUID, seen_external_ids: set[str]) -> int:
+    async def mark_missing_as_removed(self, source_id: uuid.UUID, seen_external_ids: set[str]) -> list[Listing]:
         """Mark active listings for a source that were not encountered in the latest crawl as
         removed. Never deletes rows — see docs/adr/17_AGENT_INSTRUCTIONS.md.
 
         Only correct for a full-source crawl — called from `run_scrape` (app/scraping/pipeline.py)
         for FULL_SOURCE_REFRESH jobs only, since a filtered SearchQuery would make every listing
         outside that filter look "missing" and get wrongly marked removed.
+
+        Returns the listings just marked removed (not just a count) — the caller uses them to mark
+        their market segments dirty (a removal changes that segment's comparable sample).
         """
         result = await self.session.execute(
             select(Listing).where(Listing.source_id == source_id, Listing.status == ListingStatus.ACTIVE)
         )
-        count = 0
+        removed = []
         for listing in result.scalars().all():
             if listing.external_id not in seen_external_ids:
                 listing.status = ListingStatus.REMOVED
-                count += 1
-        return count
+                removed.append(listing)
+        return removed
 
     def _add_snapshot(self, listing: Listing, data: SourceListing, captured_at: datetime) -> None:
         self.session.add(
