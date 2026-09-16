@@ -305,6 +305,46 @@ async def test_iter_search_pages_retries_once_then_skips_unparseable_page(monkey
     assert force_proxy_flags == [False, True, False]
 
 
+async def test_iter_search_pages_skips_page_on_fetch_timeout_instead_of_aborting_crawl(monkeypatch):
+    """Regression test for the 2026-09-15 incident: a single search-page ReadTimeout (surfaced by
+    raise_for_blocked as a bare RuntimeError, not FetchBlockedError — see fetch_strategy.py) used
+    to propagate straight out of _iter_search_pages and fail the whole FULL_SOURCE_REFRESH job
+    46 minutes and hundreds of successfully-crawled pages in. It must be treated like an
+    unparseable page instead: retried once via proxy, then skipped so the crawl continues.
+    """
+    from app.search.query import SearchQuery
+
+    outcomes: list[FetchOutcome] = []
+    adapter = PolovniAutomobiliSource(proxy_provider=FakeProxyProvider(), outcome_sink=outcomes.append, max_pages=3)
+
+    listing = SourceListing(
+        external_id="1", canonical_url="https://x/1", title="x", make="Skoda", model="Octavia",
+        production_year=2019, mileage_km=1, price=1, currency="EUR",
+    )
+
+    force_proxy_flags: list[bool] = []
+
+    async def fake_fetch(url: str, *, force_proxy: bool = False) -> str:
+        force_proxy_flags.append(force_proxy)
+        if "page=1&" in url:
+            raise RuntimeError(f"Fetch failed for {url}: timeout (ReadTimeout: read timeout=15)")
+        return url
+
+    def fake_parse(html: str) -> tuple[list, int]:
+        return [listing], 2
+
+    monkeypatch.setattr(adapter, "_fetch", fake_fetch)
+    monkeypatch.setattr(adapter, "parse_search_page", fake_parse)
+
+    results = [item async for item in adapter.search_with_data(SearchQuery())]
+
+    # Page 1 timed out on both the direct attempt and the proxy retry and was skipped; page 2
+    # fetched fine and its listing was yielded — the crawl as a whole did not raise.
+    assert results == [listing]
+    assert outcomes == [FetchOutcome.PAGE_SKIPPED]
+    assert force_proxy_flags == [False, True, False]
+
+
 async def test_iter_search_pages_recovers_if_retry_parses_successfully(monkeypatch):
     from app.search.query import SearchQuery
 

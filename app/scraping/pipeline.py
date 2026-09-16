@@ -83,7 +83,12 @@ async def _enrich_with_equipment(adapter: CarSource, repository: ListingReposito
     ref = SourceListingRef(external_id=listing.external_id, url=listing.canonical_url)
     try:
         detail = await adapter.fetch_listing(ref)
-    except (FetchBlockedError, ParserError):
+    except (FetchBlockedError, ParserError, RuntimeError):
+        # RuntimeError alongside the already-handled pair: raise_for_blocked's catch-all for a
+        # single detail-page TIMEOUT/SERVER_ERROR (see PolovniAutomobiliSource._fetch_search_page
+        # for the same fix on the search-page path, and the 2026-09-15 incident that motivated
+        # it). This fetch is a best-effort backfill on an otherwise-successful new listing, not
+        # worth failing the whole crawl over one slow request.
         return
     if detail.equipment:
         repository.set_equipment(listing, detail.equipment)

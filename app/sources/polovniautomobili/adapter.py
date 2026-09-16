@@ -184,12 +184,24 @@ class PolovniAutomobiliSource:
         self, url: str, page: int, *, force_proxy: bool = False
     ) -> tuple[list[SourceListing], int] | None:
         """One fetch+parse attempt for a search page. Returns None (rather than raising) on a
-        parse failure, so `_iter_search_pages` can retry or skip the page instead of aborting the
-        whole crawl — a fetch failure (FetchBlockedError, or the RuntimeError raise_for_blocked
-        raises for TIMEOUT/SERVER_ERROR) still propagates normally, since those aren't
-        page-specific and retrying won't help.
+        parse failure or a page-level fetch failure, so `_iter_search_pages` can retry or skip the
+        page instead of aborting the whole crawl. FetchBlockedError still propagates normally —
+        the source telling us to back off isn't page-specific, every remaining page would likely
+        hit the same wall (see pipeline.py's run_scrape).
+
+        RuntimeError (raise_for_blocked's catch-all for TIMEOUT/SERVER_ERROR/exhausted
+        NETWORK_ERROR) is caught here rather than left to propagate: a single 15s ReadTimeout on
+        one page of one price/year bracket took down an entire 46-minute, otherwise-successful
+        FULL_SOURCE_REFRESH this way in production (2026-09-15, page 326 of a
+        priceFrom=7325&priceTo=9765 bracket) — losing all its progress and skipping
+        mark_missing_as_removed over what was just a transient blip on one of thousands of
+        requests, not the source being unhappy with the crawl as a whole.
         """
-        html = await self._fetch(url, force_proxy=force_proxy)
+        try:
+            html = await self._fetch(url, force_proxy=force_proxy)
+        except RuntimeError as exc:
+            logger.warning("polovniautomobili: page %d fetch failed (%s): %s", page, url, exc)
+            return None
         try:
             return self._guard_parse(self.parse_search_page, html)
         except ParserError as exc:
