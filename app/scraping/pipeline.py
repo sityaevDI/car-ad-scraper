@@ -10,6 +10,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.listings.repository import ListingRepository
+from app.market.config import get_market_config
+from app.market.repository import MarketRepository
+from app.market.segment import segment_criteria_for_listing
 from app.models.listing import Listing
 from app.models.source import Source
 from app.scraping.fetch_outcome import FetchBlockedError, FetchOutcome, OutcomeCounter, ParserError
@@ -105,6 +108,8 @@ async def run_scrape(
     """
     counter = OutcomeCounter()
     rate_limit = await get_scrape_rate_limit(session)
+    market_config = await get_market_config(session)
+    market_repo = MarketRepository(session)
     # delay/jitter/network_error_retry_delay are adapter-specific kwargs only PolovniAutomobiliSource
     # accepts today (see its __init__ docstring) — fine while it's the only registered source, but
     # a second adapter without matching kwargs would need this call to become source-aware.
@@ -137,6 +142,14 @@ async def run_scrape(
                 if previous_price is not None and previous_price > listing.price:
                     stats.price_drops.append((listing.id, previous_price, listing.price))
 
+            # A brand-new listing or a real price change is worth re-scoring its segment for.
+            # Deliberately *not* triggered by a mileage-only change with no price change — crossing
+            # a mileage_bucket_km boundary (20k km default) between two crawls of the same listing
+            # is rare enough on this scraper's cadence to not be worth marking dirty for.
+            if is_new or previous_price is not None:
+                criteria = segment_criteria_for_listing(listing, mileage_bucket_km=market_config.mileage_bucket_km)
+                await market_repo.mark_dirty(criteria)
+
             if stats.listings_seen % _COMMIT_BATCH_SIZE == 0:
                 await session.commit()
     except (FetchBlockedError, ParserError) as exc:
@@ -155,7 +168,12 @@ async def run_scrape(
         stats.blocked = True
 
     if mark_removed and not stats.blocked and stats.listings_seen > 0:
-        stats.listings_removed = await repository.mark_missing_as_removed(source.id, stats.seen_external_ids)
+        removed_listings = await repository.mark_missing_as_removed(source.id, stats.seen_external_ids)
+        stats.listings_removed = len(removed_listings)
+        for listing in removed_listings:
+            await market_repo.mark_dirty(
+                segment_criteria_for_listing(listing, mileage_bucket_km=market_config.mileage_bucket_km)
+            )
 
     stats.outcome_counts = counter.as_dict()
     await session.commit()

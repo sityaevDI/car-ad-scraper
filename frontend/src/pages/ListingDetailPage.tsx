@@ -6,7 +6,7 @@ import { ErrorState } from '../components/StateMessage'
 import { StatusBadge } from '../components/StatusBadge'
 import { ApiError } from '../lib/client'
 import { formatDate, formatMileage, formatPrice } from '../lib/format'
-import { listingsApi } from '../lib/listings'
+import { listingsApi, type MarketConfidence, type MarketComparisonOut } from '../lib/listings'
 import { BODY_TYPE_OPTIONS, FUEL_TYPE_OPTIONS, TRANSMISSION_OPTIONS } from '../search/constants'
 
 const TAG_LABELS = new Map<string, string>(
@@ -16,6 +16,77 @@ const TAG_LABELS = new Map<string, string>(
 function tag(value: string | null): string {
   if (!value) return '—'
   return TAG_LABELS.get(value) ?? value
+}
+
+const CONFIDENCE_LABELS: Record<MarketConfidence, string> = {
+  insufficient: 'недостаточно данных',
+  low: 'низкая',
+  medium: 'средняя',
+  high: 'высокая',
+}
+
+// price_score.label values from app/market/pricing.py — text + color per deviation from the
+// segment's equipment-adjusted reference price (see docs/adr/06_SEARCH_MARKET.md §6).
+const PRICE_LABELS: Record<string, { text: string; className: string }> = {
+  significantly_below: { text: 'Значительно ниже рынка', className: 'bg-emerald-100 text-emerald-800' },
+  below: { text: 'Ниже рынка', className: 'bg-emerald-50 text-emerald-700' },
+  market: { text: 'Рыночная цена', className: 'bg-slate-100 text-slate-700' },
+  above: { text: 'Выше рынка', className: 'bg-amber-50 text-amber-700' },
+  significantly_above: { text: 'Значительно выше рынка', className: 'bg-rose-100 text-rose-800' },
+}
+
+function MarketComparisonSection({
+  isLoading,
+  comparison,
+  currency,
+}: {
+  isLoading: boolean
+  comparison: MarketComparisonOut | undefined
+  currency: string
+}) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <h2 className="mb-3 text-sm font-semibold text-slate-900">Рыночная оценка</h2>
+      {isLoading ? (
+        <div className="h-16 animate-pulse rounded-md bg-slate-100" />
+      ) : !comparison?.market ? (
+        <p className="text-sm text-slate-500">Оценивается — пока недостаточно похожих объявлений.</p>
+      ) : (
+        <div className="flex flex-wrap items-start gap-6">
+          <div>
+            <p className="text-xs text-slate-400">Оценочная рыночная цена</p>
+            <p className="text-lg font-semibold text-slate-900">
+              {comparison.market.estimated_price !== null
+                ? formatPrice(comparison.market.estimated_price, currency)
+                : '—'}
+            </p>
+            {comparison.market.price_low !== null && comparison.market.price_high !== null && (
+              <p className="text-xs text-slate-500">
+                {formatPrice(comparison.market.price_low, currency)} – {formatPrice(comparison.market.price_high, currency)}
+              </p>
+            )}
+          </div>
+          <div>
+            <p className="text-xs text-slate-400">Уверенность оценки</p>
+            <p className="text-sm text-slate-700">{CONFIDENCE_LABELS[comparison.market.confidence]}</p>
+            <p className="text-xs text-slate-500">{comparison.market.comparable_listings_count} похожих объявлений</p>
+          </div>
+          {comparison.price_score && (
+            <div>
+              <p className="text-xs text-slate-400">Эта цена</p>
+              <span
+                className={`inline-block rounded-full px-2.5 py-1 text-xs font-medium ${
+                  PRICE_LABELS[comparison.price_score.label]?.className ?? 'bg-slate-100 text-slate-700'
+                }`}
+              >
+                {PRICE_LABELS[comparison.price_score.label]?.text ?? comparison.price_score.label}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function Field({ label, value }: { label: string; value: string }) {
@@ -35,6 +106,12 @@ export function ListingDetailPage() {
   const query = useQuery({
     queryKey: ['listing-history', id],
     queryFn: () => listingsApi.getHistory(id!),
+    enabled: Boolean(id),
+  })
+
+  const marketQuery = useQuery({
+    queryKey: ['listing-market-comparison', id],
+    queryFn: () => listingsApi.getMarketComparison(id!),
     enabled: Boolean(id),
   })
 
@@ -142,6 +219,12 @@ export function ListingDetailPage() {
           </div>
         </div>
       </div>
+
+      <MarketComparisonSection
+        isLoading={marketQuery.isLoading}
+        comparison={marketQuery.data}
+        currency={listing.currency}
+      />
 
       <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="mb-3 text-sm font-semibold text-slate-900">История изменений</h2>

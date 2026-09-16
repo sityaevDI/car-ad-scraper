@@ -4,6 +4,7 @@ from sqlalchemy import select
 
 import app.sources.registry as registry
 from app.models.listing import Listing, ListingStatus
+from app.models.market import MarketDirtySegment
 from app.models.scrape_rate_limit import ScrapeRateLimit
 from app.scraping.fetch_outcome import FetchBlockedError, FetchOutcome, ParserError
 from app.scraping.pipeline import _COMMIT_BATCH_SIZE, run_scrape
@@ -302,3 +303,49 @@ async def test_run_scrape_commits_periodically_during_a_long_crawl(session, monk
 
     persisted = (await session.execute(select(Listing))).scalars().all()
     assert len(persisted) == len(external_ids)
+
+
+async def test_run_scrape_marks_segment_dirty_for_new_listing(session, monkeypatch):
+    monkeypatch.setitem(registry.SOURCE_REGISTRY, "stub_source", _make_stub_adapter(["1"]))
+
+    await run_scrape(session, source_code="stub_source", query=SearchQuery())
+
+    dirty = (await session.execute(select(MarketDirtySegment))).scalars().all()
+    assert len(dirty) == 1
+    assert dirty[0].make == "skoda"
+    assert dirty[0].model == "octavia"
+
+
+async def test_run_scrape_marks_segment_dirty_on_price_change_not_on_no_op_recrawl(session, monkeypatch):
+    monkeypatch.setitem(registry.SOURCE_REGISTRY, "stub_source", _make_stub_adapter(["1"]))
+    await run_scrape(session, source_code="stub_source", query=SearchQuery())
+    # The first crawl's dirty mark is consumed by the recompute cron in real operation — simulate
+    # that here by clearing it, so this test only observes marks from the second crawl below.
+    await session.execute(MarketDirtySegment.__table__.delete())
+    await session.commit()
+
+    class PriceDropAdapter(StubAdapter):
+        external_ids = ["1"]
+
+        async def search_with_data(self, query):
+            yield _listing("1", 9_000)
+
+    monkeypatch.setitem(registry.SOURCE_REGISTRY, "stub_source", PriceDropAdapter)
+    await run_scrape(session, source_code="stub_source", query=SearchQuery())
+
+    dirty = (await session.execute(select(MarketDirtySegment))).scalars().all()
+    assert len(dirty) == 1
+
+
+async def test_run_scrape_marks_segment_dirty_for_removed_listing(session, monkeypatch):
+    monkeypatch.setitem(registry.SOURCE_REGISTRY, "stub_source", _make_stub_adapter(["1", "2"]))
+    await run_scrape(session, source_code="stub_source", query=SearchQuery(), mark_removed=True)
+    await session.execute(MarketDirtySegment.__table__.delete())
+    await session.commit()
+
+    monkeypatch.setitem(registry.SOURCE_REGISTRY, "stub_source", _make_stub_adapter(["1"]))
+    stats = await run_scrape(session, source_code="stub_source", query=SearchQuery(), mark_removed=True)
+
+    assert stats.listings_removed == 1
+    dirty = (await session.execute(select(MarketDirtySegment))).scalars().all()
+    assert len(dirty) == 1
