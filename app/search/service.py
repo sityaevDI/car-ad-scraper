@@ -30,6 +30,7 @@ ALLOWED_GROUP_FIELDS = {
     "transmission": Listing.transmission,
     "engine_volume_cc": _ENGINE_VOLUME_BUCKET,
     "body_type": Listing.body_type,
+    "interior_material": Listing.interior_material,
 }
 
 _FLAT_SORTS: dict[str, ColumnElement] = {
@@ -88,6 +89,8 @@ def _apply_filters(stmt: Select, query: SearchQuery) -> Select:
         stmt = stmt.where(Listing.transmission.in_(query.transmissions))
     if query.body_types:
         stmt = stmt.where(Listing.body_type.in_(query.body_types))
+    if query.interior_materials:
+        stmt = stmt.where(Listing.interior_material.in_(query.interior_materials))
     if query.equipment:
         stmt = stmt.where(Listing.equipment.contains(query.equipment))
     if query.location:
@@ -109,6 +112,8 @@ def _build_label(group: dict) -> str:
         parts.append(str(group["transmission"]).title())
     if group.get("body_type"):
         parts.append(str(group["body_type"]).title())
+    if group.get("interior_material"):
+        parts.append(str(group["interior_material"]).title())
     if group.get("production_year"):
         parts.append(str(group["production_year"]))
     return " ".join(parts) if parts else "Other"

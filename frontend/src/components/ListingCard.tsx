@@ -2,10 +2,13 @@ import { Link } from 'react-router-dom'
 import { formatMileage, formatPrice } from '../lib/format'
 import type { ListingOut } from '../lib/listings'
 import { StatusBadge } from './StatusBadge'
-import { FUEL_TYPE_OPTIONS, TRANSMISSION_OPTIONS, BODY_TYPE_OPTIONS } from '../search/constants'
+import { FUEL_TYPE_OPTIONS, TRANSMISSION_OPTIONS, BODY_TYPE_OPTIONS, INTERIOR_MATERIAL_OPTIONS } from '../search/constants'
 
 const TAG_LABELS = new Map<string, string>(
-  [...FUEL_TYPE_OPTIONS, ...TRANSMISSION_OPTIONS, ...BODY_TYPE_OPTIONS].map((o) => [o.value, o.label]),
+  [...FUEL_TYPE_OPTIONS, ...TRANSMISSION_OPTIONS, ...BODY_TYPE_OPTIONS, ...INTERIOR_MATERIAL_OPTIONS].map((o) => [
+    o.value,
+    o.label,
+  ]),
 )
 
 function tag(value: string | null): string | null {
@@ -14,9 +17,12 @@ function tag(value: string | null): string | null {
 }
 
 export function ListingCard({ listing }: { listing: ListingOut }) {
-  const tags = [tag(listing.fuel_type), tag(listing.transmission), tag(listing.body_type)].filter(
-    (t): t is string => Boolean(t),
-  )
+  const tags = [
+    tag(listing.fuel_type),
+    tag(listing.transmission),
+    tag(listing.body_type),
+    tag(listing.interior_material),
+  ].filter((t): t is string => Boolean(t))
 
   return (
     <div className="flex gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">

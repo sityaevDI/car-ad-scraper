@@ -72,6 +72,20 @@ async def test_filters_apply_before_grouping(session):
     assert response.groups[0].price_max == 11_000
 
 
+async def test_filters_by_interior_material(session):
+    source = await seed_source(session)
+    session.add(make_listing(source.id, price=11_000, interior_material="leather"))
+    session.add(make_listing(source.id, price=12_000, interior_material="cloth"))
+    session.add(make_listing(source.id, price=13_000, interior_material=None))
+    await session.commit()
+
+    request = SearchRequest(query=SearchQuery(interior_materials=["leather"]))
+    response = await SearchService(session).search(request)
+
+    assert response.total_listings == 1
+    assert response.groups[0].price_min == 11_000
+
+
 async def test_flat_mode_returns_listings_when_group_by_empty(session):
     source = await seed_source(session)
     session.add(make_listing(source.id, price=11_000))
