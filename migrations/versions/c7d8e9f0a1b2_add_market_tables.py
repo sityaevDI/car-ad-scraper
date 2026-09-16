@@ -1,7 +1,7 @@
 """add market tables
 
 Revision ID: c7d8e9f0a1b2
-Revises: b3c4d5e6f7a8
+Revises: d5e6f7a8b9c0
 Create Date: 2026-09-16 00:00:00.000000
 
 """
@@ -14,7 +14,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'c7d8e9f0a1b2'
-down_revision: Union[str, Sequence[str], None] = 'b3c4d5e6f7a8'
+down_revision: Union[str, Sequence[str], None] = 'd5e6f7a8b9c0'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

@@ -1,6 +1,6 @@
 import type { SearchQuery } from '../lib/search'
 import { useVehicleMakes } from './useVehicleMakes'
-import { BODY_TYPE_OPTIONS, FUEL_TYPE_OPTIONS, TRANSMISSION_OPTIONS } from './constants'
+import { BODY_TYPE_OPTIONS, FUEL_TYPE_OPTIONS, INTERIOR_MATERIAL_OPTIONS, TRANSMISSION_OPTIONS } from './constants'
 import { EquipmentFilter } from './EquipmentFilter'
 
 const inputClass =
@@ -209,6 +209,12 @@ export function SearchFilters({
           options={BODY_TYPE_OPTIONS}
           selected={value.body_types}
           onChange={(v) => onChange({ ...value, body_types: v })}
+        />
+        <CheckboxGroup
+          label="Материал салона"
+          options={INTERIOR_MATERIAL_OPTIONS}
+          selected={value.interior_materials}
+          onChange={(v) => onChange({ ...value, interior_materials: v })}
         />
       </div>
 

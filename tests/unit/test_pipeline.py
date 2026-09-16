@@ -58,6 +58,7 @@ class StubAdapterWithEquipment(StubAdapter):
         self.fetch_listing_calls.append(ref.external_id)
         listing = _listing(ref.external_id, 10_000)
         listing.equipment = ["bluetooth", "apple_carplay"]
+        listing.interior_material = "combined_leather"
         return listing
 
 
@@ -71,6 +72,44 @@ def _make_stub_adapter_with_equipment(external_ids: list[str]) -> type[StubAdapt
 
 def _make_stub_adapter(external_ids: list[str]) -> type[StubAdapter]:
     return type("_ConfiguredStubAdapter", (StubAdapter,), {"external_ids": external_ids})
+
+
+class PartitionableStubAdapter:
+    """Declares the two capability attributes app/scraping/query_partitioning.py looks for
+    (max_crawlable_pages/probe_page_count), so run_scrape actually exercises partitioning instead
+    of the no-op path every other stub adapter here takes. Each price bracket "contains" a
+    distinct slice of listings, mirroring how a real source's search results depend on the query's
+    filters — used to verify run_scrape merges every partition's results into one ScrapeStats
+    (see tests below) instead of only ever seeing the last partition crawled.
+    """
+
+    source_code = "stub_source"
+    display_name = "Stub Source"
+    domain = "stub.example.com"
+    country = "RS"
+    max_crawlable_pages = 10
+
+    _BRACKET_LISTINGS = {
+        (0, 2_500_000): ["1", "2"],
+        (2_500_001, 5_000_000): ["3"],
+    }
+
+    def __init__(self, max_pages=5, proxy_provider=None, outcome_sink=None, **kwargs):
+        self.outcome_sink = outcome_sink
+
+    async def probe_page_count(self, query: SearchQuery) -> int:
+        if query.price_min is None and query.price_max is None:
+            return 1000  # the unfiltered query is too big and needs splitting
+        return 5  # any bracket query_partitioning produces here fits in one crawl
+
+    async def search_with_data(self, query: SearchQuery) -> AsyncIterator[SourceListing]:
+        for external_id in self._BRACKET_LISTINGS[(query.price_min, query.price_max)]:
+            if self.outcome_sink:
+                self.outcome_sink(FetchOutcome.SUCCESS)
+            yield _listing(external_id, 10_000)
+
+    async def fetch_listing(self, ref: SourceListingRef) -> SourceListing:
+        return _listing(ref.external_id, 10_000)
 
 
 class StubBlockedAdapter:
@@ -231,9 +270,52 @@ async def test_run_scrape_skips_mark_removed_when_blocked_mid_crawl(session, mon
     assert statuses == {ListingStatus.ACTIVE}
 
 
+async def test_run_scrape_merges_results_from_every_partition(session, monkeypatch):
+    """A query too big for one crawl (see query_partitioning.py) gets split into several — this
+    asserts run_scrape actually crawls every one of them, not just the first or last.
+    """
+    monkeypatch.setitem(registry.SOURCE_REGISTRY, "stub_source", PartitionableStubAdapter)
+
+    stats = await run_scrape(session, source_code="stub_source", query=SearchQuery(), max_pages=20)
+
+    assert stats.listings_seen == 3
+    assert stats.listings_created == 3
+    assert stats.seen_external_ids == {"1", "2", "3"}
+
+    persisted = {listing.external_id for listing in (await session.execute(select(Listing))).scalars().all()}
+    assert persisted == {"1", "2", "3"}
+
+
+async def test_run_scrape_mark_removed_uses_the_union_of_every_partition(session, monkeypatch):
+    """mark_removed must only fire once, after every partition has been crawled, using what all of
+    them saw combined — calling it per-partition would be wrong: bracket A's crawl would see
+    bracket B's listings as "missing" (and vice versa) and wrongly mark them removed (see
+    ListingRepository.mark_missing_as_removed's docstring on why a filtered query can't safely
+    drive it on its own).
+    """
+    monkeypatch.setitem(registry.SOURCE_REGISTRY, "stub_source", _make_stub_adapter(["1", "2", "3", "4"]))
+    await run_scrape(session, source_code="stub_source", query=SearchQuery(), mark_removed=True)
+
+    # "4" doesn't appear in either of PartitionableStubAdapter's brackets — it should end up
+    # removed precisely because it's missing from all of them combined, not from just one.
+    monkeypatch.setitem(registry.SOURCE_REGISTRY, "stub_source", PartitionableStubAdapter)
+    stats = await run_scrape(session, source_code="stub_source", query=SearchQuery(), max_pages=20, mark_removed=True)
+
+    assert stats.listings_removed == 1
+    rows = (await session.execute(select(Listing))).scalars().all()
+    persisted = {listing.external_id: listing.status for listing in rows}
+    assert persisted == {
+        "1": ListingStatus.ACTIVE,
+        "2": ListingStatus.ACTIVE,
+        "3": ListingStatus.ACTIVE,
+        "4": ListingStatus.REMOVED,
+    }
+
+
 async def test_run_scrape_backfills_equipment_once_on_creation(session, monkeypatch):
-    """Search-page results don't carry equipment (see mapper.py), so a new listing gets one
-    detail-page fetch to backfill it — but only once, not on every re-crawl of the same listing.
+    """Search-page results don't carry equipment or interior_material (see mapper.py), so a new
+    listing gets one detail-page fetch to backfill both — but only once, not on every re-crawl of
+    the same listing.
     """
     adapter_cls = _make_stub_adapter_with_equipment(["1"])
     monkeypatch.setitem(registry.SOURCE_REGISTRY, "stub_source", adapter_cls)
@@ -241,7 +323,31 @@ async def test_run_scrape_backfills_equipment_once_on_creation(session, monkeypa
     await run_scrape(session, source_code="stub_source", query=SearchQuery())
     listing = (await session.execute(select(Listing))).scalar_one()
     assert listing.equipment == ["bluetooth", "apple_carplay"]
+    assert listing.interior_material == "combined_leather"
     assert adapter_cls.fetch_listing_calls == ["1"]
+
+
+async def test_run_scrape_survives_equipment_fetch_timeout(session, monkeypatch):
+    """Regression test alongside the polovni adapter's own (2026-09-15 incident): the equipment
+    backfill fetch for a brand-new listing is best-effort, so a RuntimeError from it (the
+    catch-all raise_for_blocked uses for TIMEOUT/SERVER_ERROR — see fetch_strategy.py) must not
+    fail the whole crawl, same as the already-handled FetchBlockedError/ParserError cases.
+    """
+
+    class _TimingOutEquipmentAdapter(StubAdapter):
+        external_ids = ["1"]
+
+        async def fetch_listing(self, ref: SourceListingRef) -> SourceListing:
+            raise RuntimeError(f"Fetch failed for {ref.url}: timeout (ReadTimeout: read timeout=15)")
+
+    monkeypatch.setitem(registry.SOURCE_REGISTRY, "stub_source", _TimingOutEquipmentAdapter)
+
+    stats = await run_scrape(session, source_code="stub_source", query=SearchQuery())
+
+    assert stats.blocked is False
+    listing = (await session.execute(select(Listing))).scalar_one()
+    assert not listing.equipment
+    assert listing.interior_material is None
 
 
 async def test_run_scrape_passes_admin_configured_rate_limit_to_adapter(session, monkeypatch):

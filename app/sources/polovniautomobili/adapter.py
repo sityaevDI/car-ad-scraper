@@ -16,7 +16,13 @@ from app.scraping.fetch_strategy import FetchStrategy, ProxyHttpFetcher, raise_f
 from app.scraping.proxy import ProxyProvider, get_proxy_provider
 from app.search.query import SearchQuery
 from app.sources.base import SourceListing, SourceListingRef
-from app.sources.polovniautomobili.mapper import BASE_URL, map_product_data, map_search_result, normalize_fuel_type
+from app.sources.polovniautomobili.mapper import (
+    BASE_URL,
+    SEARCH_RESULT_REQUIRED_FIELDS,
+    map_product_data,
+    map_search_result,
+    normalize_fuel_type,
+)
 from scraping.translation import fuel_type_codes
 
 _T = TypeVar("_T")
@@ -39,6 +45,14 @@ class PolovniAutomobiliSource:
     display_name = "Polovni Automobili"
     domain = "polovniautomobili.com"
     country = "RS"
+
+    # Verified 2026-09-13 by paging a plain browser session (no scraper involved): page 751+ of
+    # any search silently re-renders page 1's own listings while the URL keeps the requested
+    # ?page=N — a hard, sort-independent depth cap on how far one query can be paged, not
+    # proxy/IP blocking. A query with more results than this needs splitting into narrower
+    # sub-queries first — see app/scraping/query_partitioning.py, which reads this attribute (and
+    # calls probe_page_count below) to do that automatically for a query that needs it.
+    max_crawlable_pages = 750
 
     def __init__(
         self,
@@ -78,31 +92,46 @@ class PolovniAutomobiliSource:
             )
 
     def build_search_url(self, query: SearchQuery, page: int = 1) -> str:
-        params: list[tuple[str, str]] = [("page", str(page)), ("sort", "basic")]
+        # "basic" (the site's default relevance-ish order) reshuffles as ads get posted/renewed
+        # while a long multi-page crawl is in flight, so the same ad can land on more than one
+        # page within a single run — each re-encounter gets upserted again and inflates
+        # ScrapeStats.listings_updated without a corresponding new row (see 2026-09-11/12
+        # FULL_SOURCE_REFRESH runs: listings_seen/listings_updated far exceeded the real row
+        # count in `listings`). renew_date_asc sorts stalest-renewed-first, so new posts and
+        # renews only ever get appended at the tail (a page we haven't reached yet) instead of
+        # prepended at page 1 — pages already crawled stay stable underneath us.
+        params: list[tuple[str, str]] = [("page", str(page)), ("sort", "renew_date_asc")]
         if query.make:
             params.append(("brand", query.make))
         for model in query.models or []:
             params.append(("model[]", model))
+        # camelCase, not snake_case: verified live 2026-09-14 that priceFrom/priceTo etc. and
+        # price_from/price_to both apply the filter (same pageCount either way), but only the
+        # camelCase form actually pages past page 1 — with the snake_case names every page from
+        # 2 on silently re-serves page 1's own results, the same failure mode as
+        # max_crawlable_pages above but starting at page 2 instead of page 751. This affects any
+        # filtered crawl, not just query_partitioning's price/year brackets — a SAVED_SEARCH or
+        # SEARCH job filtering on any of these previously only ever saw its first page.
         if query.price_min is not None:
-            params.append(("price_from", str(query.price_min)))
+            params.append(("priceFrom", str(query.price_min)))
         if query.price_max is not None:
-            params.append(("price_to", str(query.price_max)))
+            params.append(("priceTo", str(query.price_max)))
         if query.year_min is not None:
-            params.append(("year_from", str(query.year_min)))
+            params.append(("yearFrom", str(query.year_min)))
         if query.year_max is not None:
-            params.append(("year_to", str(query.year_max)))
+            params.append(("yearTo", str(query.year_max)))
         if query.mileage_min is not None:
-            params.append(("mileage_from", str(query.mileage_min)))
+            params.append(("mileageFrom", str(query.mileage_min)))
         if query.mileage_max is not None:
-            params.append(("mileage_to", str(query.mileage_max)))
+            params.append(("mileageTo", str(query.mileage_max)))
         if query.engine_volume_min is not None:
-            params.append(("engine_volume_from", str(query.engine_volume_min)))
+            params.append(("engineVolumeFrom", str(query.engine_volume_min)))
         if query.engine_volume_max is not None:
-            params.append(("engine_volume_to", str(query.engine_volume_max)))
+            params.append(("engineVolumeTo", str(query.engine_volume_max)))
         if query.power_min is not None:
-            params.append(("power_from", str(query.power_min)))
+            params.append(("powerFrom", str(query.power_min)))
         if query.power_max is not None:
-            params.append(("power_to", str(query.power_max)))
+            params.append(("powerTo", str(query.power_max)))
         for fuel in query.fuel_types or []:
             code = _FUEL_CODE_BY_NORMALIZED.get(fuel)
             if code is not None:
@@ -115,9 +144,20 @@ class PolovniAutomobiliSource:
         """
         data = _extract_next_data(html)
         search_results = data["props"]["pageProps"]["searchResults"]
-        # "Price on request" listings (no numeric price) can't be grouped/compared and are
-        # dropped rather than stored with a fabricated price.
-        listings = [map_search_result(raw) for raw in search_results["results"] if "price" in raw]
+        # Two reasons an entry gets dropped instead of mapped: "price on request" ads have no
+        # numeric price and can't be grouped/compared, and — reproduced live across several
+        # 2026-09-11/12/13 crawls — some other, rarer ads are simply missing a field entirely
+        # (page 591 of a renew_date_asc crawl consistently 'model'-KeyErrors; earlier runs hit
+        # 'brand' on a different page). Before this filter, one such entry raised inside
+        # map_search_result and took its whole page down (PAGE_SKIPPED — see
+        # _iter_search_pages), losing every other listing on that page and, worse, blocking
+        # mark_missing_as_removed for the entire crawl (see pipeline.run_scrape). Dropping just
+        # the incomplete entries here keeps the rest of the page.
+        listings = [
+            map_search_result(raw)
+            for raw in search_results["results"]
+            if SEARCH_RESULT_REQUIRED_FIELDS.issubset(raw)
+        ]
         return listings, search_results["pageCount"]
 
     def parse_listing(self, html: str) -> SourceListing:
@@ -144,12 +184,24 @@ class PolovniAutomobiliSource:
         self, url: str, page: int, *, force_proxy: bool = False
     ) -> tuple[list[SourceListing], int] | None:
         """One fetch+parse attempt for a search page. Returns None (rather than raising) on a
-        parse failure, so `_iter_search_pages` can retry or skip the page instead of aborting the
-        whole crawl — a fetch failure (FetchBlockedError, or the RuntimeError raise_for_blocked
-        raises for TIMEOUT/SERVER_ERROR) still propagates normally, since those aren't
-        page-specific and retrying won't help.
+        parse failure or a page-level fetch failure, so `_iter_search_pages` can retry or skip the
+        page instead of aborting the whole crawl. FetchBlockedError still propagates normally —
+        the source telling us to back off isn't page-specific, every remaining page would likely
+        hit the same wall (see pipeline.py's run_scrape).
+
+        RuntimeError (raise_for_blocked's catch-all for TIMEOUT/SERVER_ERROR/exhausted
+        NETWORK_ERROR) is caught here rather than left to propagate: a single 15s ReadTimeout on
+        one page of one price/year bracket took down an entire 46-minute, otherwise-successful
+        FULL_SOURCE_REFRESH this way in production (2026-09-15, page 326 of a
+        priceFrom=7325&priceTo=9765 bracket) — losing all its progress and skipping
+        mark_missing_as_removed over what was just a transient blip on one of thousands of
+        requests, not the source being unhappy with the crawl as a whole.
         """
-        html = await self._fetch(url, force_proxy=force_proxy)
+        try:
+            html = await self._fetch(url, force_proxy=force_proxy)
+        except RuntimeError as exc:
+            logger.warning("polovniautomobili: page %d fetch failed (%s): %s", page, url, exc)
+            return None
         try:
             return self._guard_parse(self.parse_search_page, html)
         except ParserError as exc:
@@ -170,6 +222,21 @@ class PolovniAutomobiliSource:
         page = 1
         total_page_count: int | None = None
         while page <= self.max_pages:
+            if page > self.max_crawlable_pages:
+                # Past this, the site just re-serves page 1's own listings under the requested
+                # ?page=N (see max_crawlable_pages above) — grinding on to self.max_pages would
+                # only re-upsert those same listings over and over. A query that needs pages
+                # beyond here should have been split into narrower sub-queries before reaching
+                # this adapter at all (app/scraping/query_partitioning.py); this is a last-resort
+                # backstop for a query that wasn't.
+                logger.warning(
+                    "polovniautomobili: stopping at page %d — beyond the site's %d-page crawl "
+                    "depth cap; this query needs splitting into narrower sub-queries to see the "
+                    "rest (see app/scraping/query_partitioning.py)",
+                    page,
+                    self.max_crawlable_pages,
+                )
+                break
             url = self.build_search_url(query, page)
             result = await self._fetch_search_page(url, page)
             if result is None:
@@ -203,6 +270,20 @@ class PolovniAutomobiliSource:
             if page >= total_page_count:
                 break
             page += 1
+
+    async def probe_page_count(self, query: SearchQuery) -> int:
+        """Total page count for `query` without crawling it — one page-1 fetch (retried once via
+        proxy on a parse failure, same as _iter_search_pages above). Used by
+        app/scraping/query_partitioning.py to size a bracket before committing to crawling it.
+        """
+        url = self.build_search_url(query, page=1)
+        result = await self._fetch_search_page(url, page=1)
+        if result is None:
+            result = await self._fetch_search_page(url, page=1, force_proxy=True)
+        if result is None:
+            raise ParserError(f"could not determine page count for {url}")
+        _listings, page_count = result
+        return page_count
 
     async def search(self, query: SearchQuery) -> AsyncIterator[SourceListingRef]:
         async for listing in self._iter_search_pages(query):

@@ -24,6 +24,7 @@ class ListingOut(BaseModel):
     fuel_type: str | None
     transmission: str | None
     body_type: str | None
+    interior_material: str | None
     engine_volume_cc: int | None
     power_hp: int | None
     location: str | None

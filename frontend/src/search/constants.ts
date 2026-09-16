@@ -26,6 +26,18 @@ export const BODY_TYPE_OPTIONS = [
 ] as const
 
 // Canonical values normalized by app/sources/polovniautomobili/mapper.py's
+// _INTERIOR_MATERIAL_NORMALIZED — kept in sync manually, same as the option lists above. Only
+// populated from a listing's detail page (see that mapper's docstring), so filtering by this
+// excludes listings whose detail page hasn't been fetched/re-fetched yet.
+export const INTERIOR_MATERIAL_OPTIONS = [
+  { value: 'cloth', label: 'Ткань' },
+  { value: 'leather', label: 'Натуральная кожа' },
+  { value: 'combined_leather', label: 'Комбинированная кожа' },
+  { value: 'velour', label: 'Велюр' },
+  { value: 'other', label: 'Другое' },
+] as const
+
+// Canonical values normalized by app/sources/polovniautomobili/mapper.py's
 // _EQUIPMENT_NORMALIZED — kept in sync manually, same as the option lists above.
 export const EQUIPMENT_POPULAR = [
   { value: 'apple_carplay', label: 'Apple CarPlay' },

@@ -17,6 +17,7 @@ from app.models.listing import Listing
 from app.models.source import Source
 from app.scraping.fetch_outcome import FetchBlockedError, FetchOutcome, OutcomeCounter, ParserError
 from app.scraping.proxy import ProxyProvider
+from app.scraping.query_partitioning import partition_query
 from app.scraping.rate_limit import get_scrape_rate_limit
 from app.search.query import SearchQuery
 from app.sources.base import CarSource, SourceListing, SourceListingRef
@@ -76,19 +77,27 @@ async def _search_listings(adapter: CarSource, query: SearchQuery) -> AsyncItera
         yield await adapter.fetch_listing(ref)
 
 
-async def _enrich_with_equipment(adapter: CarSource, repository: ListingRepository, listing: Listing) -> None:
-    """Search-page results don't carry `equipment` (see mapper.py's docstring on the search vs.
-    detail page JSON shapes), so a brand-new listing gets one extra detail-page fetch here to
-    backfill it. Only done once, on creation — a listing's equipment doesn't change over its
-    lifetime, so re-crawls of an already-known listing skip this and stay cheap.
+async def _enrich_with_detail(adapter: CarSource, repository: ListingRepository, listing: Listing) -> None:
+    """Search-page results don't carry `equipment` or a reliable `interior_material` (see
+    mapper.py's docstring on the search vs. detail page JSON shapes), so a brand-new listing gets
+    one extra detail-page fetch here to backfill both. Only done once, on creation — neither field
+    changes over a listing's lifetime, so re-crawls of an already-known listing skip this and stay
+    cheap.
     """
     ref = SourceListingRef(external_id=listing.external_id, url=listing.canonical_url)
     try:
         detail = await adapter.fetch_listing(ref)
-    except (FetchBlockedError, ParserError):
+    except (FetchBlockedError, ParserError, RuntimeError):
+        # RuntimeError alongside the already-handled pair: raise_for_blocked's catch-all for a
+        # single detail-page TIMEOUT/SERVER_ERROR (see PolovniAutomobiliSource._fetch_search_page
+        # for the same fix on the search-page path, and the 2026-09-15 incident that motivated
+        # it). This fetch is a best-effort backfill on an otherwise-successful new listing, not
+        # worth failing the whole crawl over one slow request.
         return
     if detail.equipment:
         repository.set_equipment(listing, detail.equipment)
+    if detail.interior_material:
+        repository.set_interior_material(listing, detail.interior_material)
 
 
 async def run_scrape(
@@ -127,38 +136,49 @@ async def run_scrape(
     )
     repository = ListingRepository(session)
 
+    # A no-op ([query]) for a source that hasn't hit this problem (see query_partitioning.py's
+    # module docstring) — only bothers probing/splitting once max_pages would actually risk paging
+    # past the source's known crawl depth.
+    partitions = await partition_query(adapter, query, max_pages)
+
     stats = ScrapeStats()
     try:
-        async for source_listing in _search_listings(adapter, query):
-            stats.listings_seen += 1
-            stats.seen_external_ids.add(source_listing.external_id)
-            listing, is_new, previous_price = await repository.upsert_listing(source.id, source_listing)
-            if is_new:
-                stats.listings_created += 1
-                stats.new_listing_ids.append(listing.id)
-                await _enrich_with_equipment(adapter, repository, listing)
-            else:
-                stats.listings_updated += 1
-                if previous_price is not None and previous_price > listing.price:
-                    stats.price_drops.append((listing.id, previous_price, listing.price))
+        for sub_query in partitions:
+            async for source_listing in _search_listings(adapter, sub_query):
+                stats.listings_seen += 1
+                stats.seen_external_ids.add(source_listing.external_id)
+                listing, is_new, previous_price = await repository.upsert_listing(source.id, source_listing)
+                if is_new:
+                    stats.listings_created += 1
+                    stats.new_listing_ids.append(listing.id)
+                    await _enrich_with_detail(adapter, repository, listing)
+                else:
+                    stats.listings_updated += 1
+                    if previous_price is not None and previous_price > listing.price:
+                        stats.price_drops.append((listing.id, previous_price, listing.price))
 
-            # A brand-new listing or a real price change is worth re-scoring its segment for.
-            # Deliberately *not* triggered by a mileage-only change with no price change — crossing
-            # a mileage_bucket_km boundary (20k km default) between two crawls of the same listing
-            # is rare enough on this scraper's cadence to not be worth marking dirty for.
-            if is_new or previous_price is not None:
-                criteria = segment_criteria_for_listing(listing, mileage_bucket_km=market_config.mileage_bucket_km)
-                await market_repo.mark_dirty(criteria)
+                # A brand-new listing or a real price change is worth re-scoring its segment for.
+                # Deliberately *not* triggered by a mileage-only change with no price change —
+                # crossing a mileage_bucket_km boundary (20k km default) between two crawls of the
+                # same listing is rare enough on this scraper's cadence to not be worth marking
+                # dirty for.
+                if is_new or previous_price is not None:
+                    criteria = segment_criteria_for_listing(
+                        listing, mileage_bucket_km=market_config.mileage_bucket_km
+                    )
+                    await market_repo.mark_dirty(criteria)
 
-            if stats.listings_seen % _COMMIT_BATCH_SIZE == 0:
-                await session.commit()
+                if stats.listings_seen % _COMMIT_BATCH_SIZE == 0:
+                    await session.commit()
     except (FetchBlockedError, ParserError) as exc:
         # Stop pagination early but keep whatever was already upserted this run — a partial
-        # result is more useful than losing it. FetchBlockedError means the source just told us
-        # to back off (burning further proxy/direct requests would be wasteful); ParserError here
-        # means the adapter itself gave up on retrying (see PolovniAutomobiliSource._fetch_listing
-        # /fetch_listing, which still raise immediately — only the search-page loop retries and
-        # skips instead of raising).
+        # result is more useful than losing it. This ends the whole partitioned crawl, not just
+        # the bracket that was mid-flight: an error here means the source itself is unhappy, and
+        # every remaining bracket would likely hit the same wall. FetchBlockedError means the
+        # source just told us to back off (burning further proxy/direct requests would be
+        # wasteful); ParserError here means the adapter itself gave up on retrying (see
+        # PolovniAutomobiliSource._fetch_listing/fetch_listing, which still raise immediately —
+        # only the search-page loop retries and skips instead of raising).
         stats.blocked = True
         stats.error_detail = str(exc)
 
