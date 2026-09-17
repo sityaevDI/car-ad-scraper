@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { formatMileage, formatPrice } from '../lib/format'
 import type { ListingOut } from '../lib/listings'
+import { PriceScoreBadge } from './PriceScoreBadge'
 import { StatusBadge } from './StatusBadge'
 import { FUEL_TYPE_OPTIONS, TRANSMISSION_OPTIONS, BODY_TYPE_OPTIONS, INTERIOR_MATERIAL_OPTIONS } from '../search/constants'
 
@@ -50,9 +51,12 @@ export function ListingCard({ listing }: { listing: ListingOut }) {
             ))}
           </div>
         )}
-        <div className="mt-auto flex items-end justify-between pt-2">
-          <span className="text-base font-semibold text-slate-900">{formatPrice(listing.price, listing.currency)}</span>
-          <div className="flex gap-3 text-xs">
+        <div className="mt-auto flex items-end justify-between gap-2 pt-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-base font-semibold text-slate-900">{formatPrice(listing.price, listing.currency)}</span>
+            {listing.price_score && <PriceScoreBadge priceScore={listing.price_score} variant="short" />}
+          </div>
+          <div className="flex shrink-0 gap-3 text-xs">
             <Link to={`/listings/${listing.id}`} className="font-medium text-slate-700 hover:underline">
               Подробнее
             </Link>

@@ -7,6 +7,7 @@ import { StatusBadge } from '../components/StatusBadge'
 import { ApiError } from '../lib/client'
 import { formatDate, formatMileage, formatPrice } from '../lib/format'
 import { listingsApi, type MarketConfidence, type MarketComparisonOut } from '../lib/listings'
+import { PriceScoreBadge } from '../components/PriceScoreBadge'
 import { BODY_TYPE_OPTIONS, FUEL_TYPE_OPTIONS, INTERIOR_MATERIAL_OPTIONS, TRANSMISSION_OPTIONS } from '../search/constants'
 
 const TAG_LABELS = new Map<string, string>(
@@ -28,14 +29,39 @@ const CONFIDENCE_LABELS: Record<MarketConfidence, string> = {
   high: 'высокая',
 }
 
-// price_score.label values from app/market/pricing.py — text + color per deviation from the
-// segment's equipment-adjusted reference price (see docs/adr/06_SEARCH_MARKET.md §6).
-const PRICE_LABELS: Record<string, { text: string; className: string }> = {
-  significantly_below: { text: 'Значительно ниже рынка', className: 'bg-emerald-100 text-emerald-800' },
-  below: { text: 'Ниже рынка', className: 'bg-emerald-50 text-emerald-700' },
-  market: { text: 'Рыночная цена', className: 'bg-slate-100 text-slate-700' },
-  above: { text: 'Выше рынка', className: 'bg-amber-50 text-amber-700' },
-  significantly_above: { text: 'Значительно выше рынка', className: 'bg-rose-100 text-rose-800' },
+// Deviation scale spans ±30% around the market reference price; deviation_pct beyond that just
+// pins to the edge. The zone coloring is a fixed visual gradient, not a literal readout of the
+// admin-configurable deviation_market_band_pct/deviation_significant_band_pct thresholds (the
+// frontend doesn't know those values) — the badge above the scale carries the actual `label`
+// computed server-side against those thresholds.
+const DEVIATION_SCALE_RANGE_PCT = 30
+
+function PriceDeviationScale({ deviationPct }: { deviationPct: number }) {
+  const clamped = Math.max(-DEVIATION_SCALE_RANGE_PCT, Math.min(DEVIATION_SCALE_RANGE_PCT, deviationPct))
+  const position = ((clamped + DEVIATION_SCALE_RANGE_PCT) / (2 * DEVIATION_SCALE_RANGE_PCT)) * 100
+
+  return (
+    <div>
+      <div className="relative h-2 rounded-full">
+        <div className="flex h-full w-full overflow-hidden rounded-full">
+          <div className="w-1/5 bg-emerald-500" />
+          <div className="w-1/5 bg-emerald-300" />
+          <div className="w-1/5 bg-slate-300" />
+          <div className="w-1/5 bg-amber-300" />
+          <div className="w-1/5 bg-rose-500" />
+        </div>
+        <div
+          className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-slate-900 shadow"
+          style={{ left: `${position}%` }}
+        />
+      </div>
+      <div className="mt-1 flex justify-between text-[10px] text-slate-400">
+        <span>Ниже рынка</span>
+        <span>Рынок</span>
+        <span>Выше рынка</span>
+      </div>
+    </div>
+  )
 }
 
 function MarketComparisonSection({
@@ -55,37 +81,38 @@ function MarketComparisonSection({
       ) : !comparison?.market ? (
         <p className="text-sm text-slate-500">Оценивается — пока недостаточно похожих объявлений.</p>
       ) : (
-        <div className="flex flex-wrap items-start gap-6">
-          <div>
-            <p className="text-xs text-slate-400">Оценочная рыночная цена</p>
-            <p className="text-lg font-semibold text-slate-900">
-              {comparison.market.estimated_price !== null
-                ? formatPrice(comparison.market.estimated_price, currency)
-                : '—'}
-            </p>
-            {comparison.market.price_low !== null && comparison.market.price_high !== null && (
-              <p className="text-xs text-slate-500">
-                {formatPrice(comparison.market.price_low, currency)} – {formatPrice(comparison.market.price_high, currency)}
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs text-slate-400">Оценочная рыночная цена</p>
+              <p className="text-lg font-semibold text-slate-900">
+                {comparison.market.estimated_price !== null
+                  ? formatPrice(comparison.market.estimated_price, currency)
+                  : '—'}
               </p>
-            )}
+              {comparison.market.price_low !== null && comparison.market.price_high !== null && (
+                <p className="text-xs text-slate-500">
+                  {formatPrice(comparison.market.price_low, currency)} – {formatPrice(comparison.market.price_high, currency)}
+                </p>
+              )}
+            </div>
+            {comparison.price_score && <PriceScoreBadge priceScore={comparison.price_score} />}
           </div>
-          <div>
-            <p className="text-xs text-slate-400">Уверенность оценки</p>
-            <p className="text-sm text-slate-700">{CONFIDENCE_LABELS[comparison.market.confidence]}</p>
-            <p className="text-xs text-slate-500">{comparison.market.comparable_listings_count} похожих объявлений</p>
-          </div>
+
           {comparison.price_score && (
             <div>
-              <p className="text-xs text-slate-400">Эта цена</p>
-              <span
-                className={`inline-block rounded-full px-2.5 py-1 text-xs font-medium ${
-                  PRICE_LABELS[comparison.price_score.label]?.className ?? 'bg-slate-100 text-slate-700'
-                }`}
-              >
-                {PRICE_LABELS[comparison.price_score.label]?.text ?? comparison.price_score.label}
-              </span>
+              <PriceDeviationScale deviationPct={comparison.price_score.deviation_pct} />
+              <p className="mt-1.5 text-xs text-slate-500">
+                Эта цена на {Math.abs(comparison.price_score.deviation_pct).toFixed(1)}%{' '}
+                {comparison.price_score.deviation_pct >= 0 ? 'выше' : 'ниже'} расчётной рыночной
+              </p>
             </div>
           )}
+
+          <p className="text-xs text-slate-400">
+            Уверенность оценки: {CONFIDENCE_LABELS[comparison.market.confidence]} ·{' '}
+            {comparison.market.comparable_listings_count} похожих объявлений
+          </p>
         </div>
       )}
     </div>
