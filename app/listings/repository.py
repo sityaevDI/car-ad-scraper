@@ -76,6 +76,7 @@ class ListingRepository:
                 body_type=data.body_type,
                 engine_volume_cc=data.engine_volume_cc,
                 power_hp=data.power_hp,
+                seats=data.seats,
                 location=data.location,
                 seller_type=data.seller_type,
                 image_url=data.image_url,
@@ -134,6 +135,12 @@ class ListingRepository:
         results don't reliably carry it) — see app/scraping/pipeline.py's `_enrich_with_detail`.
         """
         listing.interior_material = interior_material
+
+    def set_air_condition(self, listing: Listing, air_condition: str | None) -> None:
+        """Same one-time detail-page backfill as set_interior_material — search-page results don't
+        carry `airCondition` at all — see app/scraping/pipeline.py's `_enrich_with_detail`.
+        """
+        listing.air_condition = air_condition
 
     async def mark_missing_as_removed(self, source_id: uuid.UUID, seen_external_ids: set[str]) -> list[Listing]:
         """Mark active listings for a source that were not encountered in the latest crawl as

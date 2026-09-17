@@ -18,8 +18,10 @@ export interface ListingOut {
   transmission: string | null
   body_type: string | null
   interior_material: string | null
+  air_condition: string | null
   engine_volume_cc: number | null
   power_hp: number | null
+  seats: string | null
   location: string | null
   image_url: string | null
   status: ListingStatus

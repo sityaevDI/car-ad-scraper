@@ -25,8 +25,10 @@ class ListingOut(BaseModel):
     transmission: str | None
     body_type: str | None
     interior_material: str | None
+    air_condition: str | None
     engine_volume_cc: int | None
     power_hp: int | None
+    seats: str | None
     location: str | None
     image_url: str | None
     status: ListingStatus

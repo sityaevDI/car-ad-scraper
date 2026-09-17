@@ -78,11 +78,11 @@ async def _search_listings(adapter: CarSource, query: SearchQuery) -> AsyncItera
 
 
 async def _enrich_with_detail(adapter: CarSource, repository: ListingRepository, listing: Listing) -> None:
-    """Search-page results don't carry `equipment` or a reliable `interior_material` (see
-    mapper.py's docstring on the search vs. detail page JSON shapes), so a brand-new listing gets
-    one extra detail-page fetch here to backfill both. Only done once, on creation — neither field
-    changes over a listing's lifetime, so re-crawls of an already-known listing skip this and stay
-    cheap.
+    """Search-page results don't carry `equipment`, a reliable `interior_material`, or
+    `air_condition` at all (see mapper.py's docstring on the search vs. detail page JSON shapes),
+    so a brand-new listing gets one extra detail-page fetch here to backfill all three. Only done
+    once, on creation — none of these fields change over a listing's lifetime, so re-crawls of an
+    already-known listing skip this and stay cheap.
     """
     ref = SourceListingRef(external_id=listing.external_id, url=listing.canonical_url)
     try:
@@ -98,6 +98,8 @@ async def _enrich_with_detail(adapter: CarSource, repository: ListingRepository,
         repository.set_equipment(listing, detail.equipment)
     if detail.interior_material:
         repository.set_interior_material(listing, detail.interior_material)
+    if detail.air_condition:
+        repository.set_air_condition(listing, detail.air_condition)
 
 
 async def run_scrape(
