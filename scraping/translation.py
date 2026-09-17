@@ -165,7 +165,16 @@ fuel_type_codes = {
     2309: "Dizel",
     2310: "Benzin + Gas (TNG)",
     2312: "Električni pogon",
-    10525: "Benzin + Metan (CNG)"
+    10525: "Benzin + Metan (CNG)",
+    # The site's fuel facet also offers these three narrower hybrid variants alongside the
+    # generic "Hibridni pogon" above (verified live 2026-09-17 via searchFormOptions.fuel in
+    # tests/fixtures/polovniautomobili/search_page_01.html and by applying each as
+    # ?fuel[]=<value> directly) — they have no legacy numeric code, only the site's own camelCase
+    # facet value, which the query string accepts as-is alongside the numeric ones for the older
+    # fuel types above.
+    "hybridGasoline": "Hibridni pogon (benzin)",
+    "hybridDiesel": "Hibridni pogon (dizel)",
+    "plugInHybrid": "Plug-in hibrid",
 }
 
 door_number_codes = {
