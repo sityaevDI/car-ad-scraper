@@ -99,6 +99,10 @@ def _apply_filters(stmt: Select, query: SearchQuery) -> Select:
         stmt = stmt.where(Listing.body_type.in_(query.body_types))
     if query.interior_materials:
         stmt = stmt.where(Listing.interior_material.in_(query.interior_materials))
+    if query.air_conditions:
+        stmt = stmt.where(Listing.air_condition.in_(query.air_conditions))
+    if query.seats:
+        stmt = stmt.where(Listing.seats.in_(query.seats))
     if query.equipment:
         stmt = stmt.where(Listing.equipment.contains(query.equipment))
     if query.location:

@@ -3,13 +3,22 @@ import { formatMileage, formatPrice } from '../lib/format'
 import type { ListingOut } from '../lib/listings'
 import { PriceScoreBadge } from './PriceScoreBadge'
 import { StatusBadge } from './StatusBadge'
-import { FUEL_TYPE_OPTIONS, TRANSMISSION_OPTIONS, BODY_TYPE_OPTIONS, INTERIOR_MATERIAL_OPTIONS } from '../search/constants'
+import {
+  AIR_CONDITION_OPTIONS,
+  BODY_TYPE_OPTIONS,
+  FUEL_TYPE_OPTIONS,
+  INTERIOR_MATERIAL_OPTIONS,
+  TRANSMISSION_OPTIONS,
+} from '../search/constants'
 
 const TAG_LABELS = new Map<string, string>(
-  [...FUEL_TYPE_OPTIONS, ...TRANSMISSION_OPTIONS, ...BODY_TYPE_OPTIONS, ...INTERIOR_MATERIAL_OPTIONS].map((o) => [
-    o.value,
-    o.label,
-  ]),
+  [
+    ...FUEL_TYPE_OPTIONS,
+    ...TRANSMISSION_OPTIONS,
+    ...BODY_TYPE_OPTIONS,
+    ...INTERIOR_MATERIAL_OPTIONS,
+    ...AIR_CONDITION_OPTIONS,
+  ].map((o) => [o.value, o.label]),
 )
 
 function tag(value: string | null): string | null {
@@ -23,6 +32,7 @@ export function ListingCard({ listing }: { listing: ListingOut }) {
     tag(listing.transmission),
     tag(listing.body_type),
     tag(listing.interior_material),
+    tag(listing.air_condition),
   ].filter((t): t is string => Boolean(t))
 
   return (

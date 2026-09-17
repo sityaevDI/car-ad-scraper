@@ -40,8 +40,10 @@ class SourceListing:
     transmission: str | None = None
     body_type: str | None = None
     interior_material: str | None = None
+    air_condition: str | None = None
     engine_volume_cc: int | None = None
     power_hp: int | None = None
+    seats: str | None = None
     location: str | None = None
     seller_type: str | None = None
     image_url: str | None = None

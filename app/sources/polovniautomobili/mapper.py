@@ -45,6 +45,17 @@ _INTERIOR_MATERIAL_NORMALIZED = {
     "Drugi": "other",
 }
 
+# Keys are the raw Serbian values from `productData.airCondition` (detail page only — like
+# `interiorMaterial`, the search-results page doesn't carry this field at all, not even
+# unreliably; see map_product_data and app/scraping/pipeline.py's `_enrich_with_detail`). Matches
+# the site's own facet values, confirmed against tests/fixtures/polovniautomobili/
+# search_page_01.html's airCondition filter definition.
+_AIR_CONDITION_NORMALIZED = {
+    "Nema klimu": "none",
+    "Manuelna klima": "manual",
+    "Automatska klima": "automatic",
+}
+
 _BODY_TYPE_NORMALIZED = {
     "Limuzina": "sedan",
     "Karavan": "wagon",
@@ -191,6 +202,24 @@ def normalize_interior_material(raw: str | None) -> str | None:
     return _INTERIOR_MATERIAL_NORMALIZED.get(raw, raw)
 
 
+def normalize_air_condition(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    return _AIR_CONDITION_NORMALIZED.get(raw, raw)
+
+
+def normalize_seats(raw: str | None) -> str | None:
+    """`raw` is a Serbian display string like "5 sedišta" (both `productData.seats` on the detail
+    page and `seats` on each search-result entry use this same format) — pull out just the count,
+    matching the site's own facet values (`{"value":"5","text":"5 sedišta"}` in
+    tests/fixtures/polovniautomobili/search_page_01.html).
+    """
+    if not raw:
+        return None
+    match = re.match(r"\d+", raw)
+    return match.group() if match else raw
+
+
 def normalize_equipment(raw: list[str] | None) -> list[str]:
     if not raw:
         return []
@@ -238,6 +267,7 @@ def map_search_result(raw: dict) -> SourceListing:
         body_type=normalize_body_type(raw.get("chassis")),
         engine_volume_cc=raw.get("engineVolume"),
         power_hp=raw.get("horsePower"),
+        seats=normalize_seats(raw.get("seats")),
         location=raw.get("city"),
         seller_type="dealer" if raw.get("dealer") else "private",
         image_url=raw.get("imageMain"),
@@ -272,10 +302,12 @@ def map_product_data(raw: dict, canonical_path: str | None = None) -> SourceList
         body_type=normalize_body_type(raw.get("chassis")),
         engine_volume_cc=raw.get("engineVolume"),
         power_hp=raw.get("horsePower"),
+        seats=normalize_seats(raw.get("seats")),
         location=raw.get("owner", {}).get("city"),
         seller_type="dealer" if "ROLE_DEALER" in raw.get("owner", {}).get("roles", []) else "private",
         image_url=_primary_image_url(raw.get("images")),
         equipment=normalize_equipment(raw.get("equipment")),
         interior_material=normalize_interior_material(raw.get("interiorMaterial")),
+        air_condition=normalize_air_condition(raw.get("airCondition")),
         raw=raw,
     )
