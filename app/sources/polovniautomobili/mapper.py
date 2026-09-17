@@ -26,6 +26,9 @@ BASE_URL = "https://www.polovniautomobili.com"
 _FUEL_TYPE_NORMALIZED = {
     "Benzin": "petrol",
     "Hibridni pogon": "hybrid",
+    "Hibridni pogon (benzin)": "hybrid_petrol",
+    "Hibridni pogon (dizel)": "hybrid_diesel",
+    "Plug-in hibrid": "plugin_hybrid",
     "Dizel": "diesel",
     "Benzin + Gas (TNG)": "lpg",
     "Električni pogon": "electric",

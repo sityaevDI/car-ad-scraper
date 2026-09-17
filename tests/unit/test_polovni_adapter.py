@@ -53,7 +53,22 @@ def test_parse_search_page_extracts_normalized_listings():
     assert first.production_year > 1990
     assert first.canonical_url.startswith("https://www.polovniautomobili.com/auto-oglasi/")
     # fuel/transmission/body normalized to the mapper's canonical vocabulary, not raw Serbian text
-    assert all(x.fuel_type in {"diesel", "petrol", "hybrid", "electric", "lpg", "cng", None} for x in listings)
+    assert all(
+        x.fuel_type
+        in {
+            "diesel",
+            "petrol",
+            "hybrid",
+            "hybrid_petrol",
+            "hybrid_diesel",
+            "plugin_hybrid",
+            "electric",
+            "lpg",
+            "cng",
+            None,
+        }
+        for x in listings
+    )
     assert all(x.transmission in {"automatic", "manual", None} for x in listings)
     assert first.image_url and first.image_url.startswith("https://cdn.polovniautomobili.com/")
     # seats is reliably present on every search-result entry (unlike interior_material/
@@ -229,6 +244,26 @@ def test_build_search_url_uses_camel_case_for_every_range_filter():
         "power_from", "power_to",
     ):
         assert unexpected not in url
+
+
+def test_build_search_url_maps_fuel_types_to_site_codes():
+    """The site splits "hybrid" into several distinct facets (see mapper.py's
+    _FUEL_TYPE_NORMALIZED) — a plain "Hibridni pogon" tag (legacy numeric code 2308) is a much
+    smaller, separate category from "Hibridni pogon (benzin)"/"(dizel)"/"Plug-in hibrid" (the
+    site's own camelCase facet values, no legacy numeric code). Each normalized fuel_types entry
+    must round-trip to the right fuel[] value, not just the generic one.
+    """
+    from app.search.query import SearchQuery
+
+    adapter = PolovniAutomobiliSource()
+    url = adapter.build_search_url(
+        SearchQuery(fuel_types=["hybrid", "hybrid_petrol", "hybrid_diesel", "plugin_hybrid"])
+    )
+
+    assert "fuel%5B%5D=2308" in url
+    assert "fuel%5B%5D=hybridGasoline" in url
+    assert "fuel%5B%5D=hybridDiesel" in url
+    assert "fuel%5B%5D=plugInHybrid" in url
 
 
 async def test_fetch_direct_success_never_touches_proxy(monkeypatch):
