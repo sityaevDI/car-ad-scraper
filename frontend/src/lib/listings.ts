@@ -27,6 +27,7 @@ export interface ListingOut {
   last_seen_at: string
   last_checked_at: string
   is_following: boolean
+  price_score: PriceScoreOut | null
 }
 
 export interface ListingSnapshotOut {
