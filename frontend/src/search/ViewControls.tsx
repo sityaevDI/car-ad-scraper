@@ -1,7 +1,11 @@
 import type { GroupField } from '../lib/search'
 import { FLAT_SORT_OPTIONS, GROUP_FIELD_LABELS, GROUP_SORT_OPTIONS } from '../lib/search'
 
-const ALL_GROUP_FIELDS = Object.keys(GROUP_FIELD_LABELS) as GroupField[]
+// Interior material is filterable (see SearchFilters) but not offered as a grouping axis — it
+// splits listings into too many thin, low-value groups to be useful there.
+const ALL_GROUP_FIELDS = (Object.keys(GROUP_FIELD_LABELS) as GroupField[]).filter(
+  (field) => field !== 'interior_material',
+)
 
 export function ViewControls({
   groupBy,

@@ -36,7 +36,7 @@ export function ListingCard({ listing }: { listing: ListingOut }) {
   ].filter((t): t is string => Boolean(t))
 
   return (
-    <div className="flex gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="relative flex gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300 hover:shadow-md">
       <div className="h-24 w-32 shrink-0 overflow-hidden rounded-md bg-slate-100">
         {listing.image_url ? (
           <img src={listing.image_url} alt={listing.title} className="h-full w-full object-cover" />
@@ -67,20 +67,22 @@ export function ListingCard({ listing }: { listing: ListingOut }) {
             {listing.price_score && <PriceScoreBadge priceScore={listing.price_score} variant="short" />}
           </div>
           <div className="flex shrink-0 gap-3 text-xs">
-            <Link to={`/listings/${listing.id}`} className="font-medium text-slate-700 hover:underline">
-              Подробнее
-            </Link>
+            <span className="font-medium text-slate-700">Подробнее</span>
+            {/* Positioned + z-10 so this link stays above the card-wide stretched link below and
+                keeps its own click behavior (new tab) instead of triggering the internal one. */}
             <a
               href={listing.canonical_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="font-medium text-slate-700 hover:underline"
+              className="relative z-10 font-medium text-slate-700 hover:underline"
             >
               Источник ↗
             </a>
           </div>
         </div>
       </div>
+      {/* Stretched link: makes the whole card (image, title, "Подробнее" text, etc.) clickable. */}
+      <Link to={`/listings/${listing.id}`} className="absolute inset-0 rounded-lg" aria-label={`Подробнее: ${listing.title}`} />
     </div>
   )
 }

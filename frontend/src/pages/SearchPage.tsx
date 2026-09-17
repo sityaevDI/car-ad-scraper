@@ -1,5 +1,5 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useCurrentUser } from '../auth/useCurrentUser'
 import { ListingCard } from '../components/ListingCard'
@@ -12,6 +12,7 @@ import { DEFAULT_GROUP_BY, searchApi } from '../lib/search'
 import { savedSearchesApi } from '../lib/savedSearches'
 import { PAGE_SIZE } from '../search/constants'
 import { GroupCard } from '../search/GroupCard'
+import { loadPersistedSearchState, savePersistedSearchState } from '../search/persistedState'
 import { SearchFilters } from '../search/SearchFilters'
 import { ViewControls } from '../search/ViewControls'
 
@@ -21,18 +22,30 @@ export function SearchPage() {
   const justRegistered = Boolean(state?.justRegistered)
   const { user } = useCurrentUser()
 
-  const [draftQuery, setDraftQuery] = useState<SearchQuery>(state?.savedQuery ?? {})
-  const [appliedQuery, setAppliedQuery] = useState<SearchQuery>(state?.savedQuery ?? {})
+  // An explicit savedQuery (from "Открыть в поиске" or the saved-search email link) always wins
+  // over whatever was left over from a previous visit — otherwise fall back to the last search so
+  // a reload or "← К поиску" from the listing page doesn't reset everything.
+  const persisted = state?.savedQuery ? null : loadPersistedSearchState()
+
+  const [draftQuery, setDraftQuery] = useState<SearchQuery>(state?.savedQuery ?? persisted?.query ?? {})
+  const [appliedQuery, setAppliedQuery] = useState<SearchQuery>(state?.savedQuery ?? persisted?.query ?? {})
   const [saveName, setSaveName] = useState('')
   const [isSavingSearch, setIsSavingSearch] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveSuccess, setSaveSuccess] = useState(false)
-  const [groupBy, setGroupBy] = useState<GroupField[]>(DEFAULT_GROUP_BY)
-  const [minGroupCount, setMinGroupCount] = useState<number | null>(null)
-  const [sort, setSort] = useState('count_desc')
-  const [page, setPage] = useState(1)
+  const [groupBy, setGroupBy] = useState<GroupField[]>(persisted?.groupBy ?? DEFAULT_GROUP_BY)
+  const [minGroupCount, setMinGroupCount] = useState<number | null>(persisted?.minGroupCount ?? null)
+  const [sort, setSort] = useState(persisted?.sort ?? 'count_desc')
+  const [page, setPage] = useState(persisted?.page ?? 1)
+  // Bumped whenever the applied query/grouping/sort/page changes, so GroupCard remounts and
+  // collapses instead of staying expanded across an unrelated set of results.
+  const [resultsVersion, setResultsVersion] = useState(0)
 
   const isGrouped = groupBy.length > 0
+
+  useEffect(() => {
+    savePersistedSearchState({ query: appliedQuery, groupBy, minGroupCount, sort, page })
+  }, [appliedQuery, groupBy, minGroupCount, sort, page])
 
   const query = useQuery({
     queryKey: ['search', appliedQuery, groupBy, minGroupCount, sort, page],
@@ -53,6 +66,7 @@ export function SearchPage() {
     const willBeGrouped = next.length > 0
     setGroupBy(next)
     setPage(1)
+    setResultsVersion((v) => v + 1)
     if (wasGrouped !== willBeGrouped) {
       setSort(willBeGrouped ? 'count_desc' : 'first_seen_desc')
     }
@@ -89,6 +103,7 @@ export function SearchPage() {
         onSubmit={() => {
           setAppliedQuery(draftQuery)
           setPage(1)
+          setResultsVersion((v) => v + 1)
           setSaveSuccess(false)
         }}
       />
@@ -121,11 +136,13 @@ export function SearchPage() {
         onSortChange={(next) => {
           setSort(next)
           setPage(1)
+          setResultsVersion((v) => v + 1)
         }}
         minGroupCount={minGroupCount}
         onMinGroupCountChange={(next) => {
           setMinGroupCount(next)
           setPage(1)
+          setResultsVersion((v) => v + 1)
         }}
       />
 
@@ -141,7 +158,7 @@ export function SearchPage() {
       ) : isGrouped ? (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {query.data?.groups?.map((group, i) => (
-            <GroupCard key={i} group={group} baseQuery={appliedQuery} groupBy={groupBy} />
+            <GroupCard key={`${resultsVersion}-${i}`} group={group} baseQuery={appliedQuery} groupBy={groupBy} />
           ))}
         </div>
       ) : (
@@ -151,7 +168,15 @@ export function SearchPage() {
       )}
 
       {!query.isLoading && !query.isError && !isEmpty && (
-        <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
+        <Pagination
+          page={page}
+          pageSize={PAGE_SIZE}
+          total={total}
+          onPageChange={(next) => {
+            setPage(next)
+            setResultsVersion((v) => v + 1)
+          }}
+        />
       )}
     </div>
   )

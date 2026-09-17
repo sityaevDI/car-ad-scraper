@@ -189,6 +189,28 @@ async def test_opening_new_match_notification_after_saved_search_deleted(client,
     assert open_response.status_code == 404
 
 
+async def test_delete_notification(client, email_sender, session_factory):
+    await _register_and_login(client, email_sender)
+    notification_id = await _seed_notification(session_factory, "notified@example.com")
+
+    response = await client.delete(f"/api/v1/me/notifications/{notification_id}", headers=_csrf_headers(client))
+    assert response.status_code == 204
+
+    list_response = await client.get("/api/v1/me/notifications")
+    assert list_response.json()["notifications"] == []
+
+
+async def test_delete_notification_404_for_other_users_notification(client, email_sender, session_factory):
+    await _register_and_login(client, email_sender, email="alice@example.com")
+    notification_id = await _seed_notification(session_factory, "alice@example.com")
+    await client.post("/api/v1/auth/logout")
+
+    await _register_and_login(client, email_sender, email="bob@example.com")
+    response = await client.delete(f"/api/v1/me/notifications/{notification_id}", headers=_csrf_headers(client))
+
+    assert response.status_code == 404
+
+
 async def test_new_match_notification_not_flagged_while_saved_search_exists(client, email_sender, session_factory):
     await _register_and_login(client, email_sender)
 
