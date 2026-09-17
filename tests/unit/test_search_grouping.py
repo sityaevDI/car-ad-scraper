@@ -86,6 +86,34 @@ async def test_filters_by_interior_material(session):
     assert response.groups[0].price_min == 11_000
 
 
+async def test_filters_by_air_condition(session):
+    source = await seed_source(session)
+    session.add(make_listing(source.id, price=11_000, air_condition="automatic"))
+    session.add(make_listing(source.id, price=12_000, air_condition="manual"))
+    session.add(make_listing(source.id, price=13_000, air_condition=None))
+    await session.commit()
+
+    request = SearchRequest(query=SearchQuery(air_conditions=["automatic"]))
+    response = await SearchService(session).search(request)
+
+    assert response.total_listings == 1
+    assert response.groups[0].price_min == 11_000
+
+
+async def test_filters_by_seats(session):
+    source = await seed_source(session)
+    session.add(make_listing(source.id, price=11_000, seats="5"))
+    session.add(make_listing(source.id, price=12_000, seats="7"))
+    session.add(make_listing(source.id, price=13_000, seats=None))
+    await session.commit()
+
+    request = SearchRequest(query=SearchQuery(seats=["5"]))
+    response = await SearchService(session).search(request)
+
+    assert response.total_listings == 1
+    assert response.groups[0].price_min == 11_000
+
+
 async def test_flat_mode_returns_listings_when_group_by_empty(session):
     source = await seed_source(session)
     session.add(make_listing(source.id, price=11_000))

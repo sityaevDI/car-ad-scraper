@@ -8,13 +8,22 @@ import { ApiError } from '../lib/client'
 import { formatDate, formatMileage, formatPrice } from '../lib/format'
 import { listingsApi, type MarketConfidence, type MarketComparisonOut } from '../lib/listings'
 import { PriceScoreBadge } from '../components/PriceScoreBadge'
-import { BODY_TYPE_OPTIONS, FUEL_TYPE_OPTIONS, INTERIOR_MATERIAL_OPTIONS, TRANSMISSION_OPTIONS } from '../search/constants'
+import {
+  AIR_CONDITION_OPTIONS,
+  BODY_TYPE_OPTIONS,
+  FUEL_TYPE_OPTIONS,
+  INTERIOR_MATERIAL_OPTIONS,
+  TRANSMISSION_OPTIONS,
+} from '../search/constants'
 
 const TAG_LABELS = new Map<string, string>(
-  [...FUEL_TYPE_OPTIONS, ...TRANSMISSION_OPTIONS, ...BODY_TYPE_OPTIONS, ...INTERIOR_MATERIAL_OPTIONS].map((o) => [
-    o.value,
-    o.label,
-  ]),
+  [
+    ...FUEL_TYPE_OPTIONS,
+    ...TRANSMISSION_OPTIONS,
+    ...BODY_TYPE_OPTIONS,
+    ...INTERIOR_MATERIAL_OPTIONS,
+    ...AIR_CONDITION_OPTIONS,
+  ].map((o) => [o.value, o.label]),
 )
 
 function tag(value: string | null): string {
@@ -232,8 +241,10 @@ export function ListingDetailPage() {
               <Field label="КПП" value={tag(listing.transmission)} />
               <Field label="Кузов" value={tag(listing.body_type)} />
               <Field label="Материал салона" value={tag(listing.interior_material)} />
+              <Field label="Кондиционер" value={tag(listing.air_condition)} />
               <Field label="Объём двигателя" value={listing.engine_volume_cc ? `${listing.engine_volume_cc} см³` : '—'} />
               <Field label="Мощность" value={listing.power_hp ? `${listing.power_hp} л.с.` : '—'} />
+              <Field label="Количество мест" value={listing.seats ?? '—'} />
               <Field label="Локация" value={listing.location ?? '—'} />
               <Field label="Впервые замечено" value={formatDate(listing.first_seen_at)} />
               <Field label="Последнее обновление" value={formatDate(listing.last_checked_at)} />

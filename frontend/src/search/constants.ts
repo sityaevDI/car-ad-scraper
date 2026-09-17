@@ -38,6 +38,29 @@ export const INTERIOR_MATERIAL_OPTIONS = [
 ] as const
 
 // Canonical values normalized by app/sources/polovniautomobili/mapper.py's
+// _AIR_CONDITION_NORMALIZED — kept in sync manually, same as the option lists above. Only
+// populated from a listing's detail page (see that mapper's docstring), so filtering by this
+// excludes listings whose detail page hasn't been fetched/re-fetched yet.
+export const AIR_CONDITION_OPTIONS = [
+  { value: 'none', label: 'Без кондиционера' },
+  { value: 'manual', label: 'Кондиционер' },
+  { value: 'automatic', label: 'Климат-контроль' },
+] as const
+
+// Canonical values are the raw seat count as a string (see mapper.py's normalize_seats) — kept
+// in sync manually with the site's own "seats" facet (2-9).
+export const SEATS_OPTIONS = [
+  { value: '2', label: '2 места' },
+  { value: '3', label: '3 места' },
+  { value: '4', label: '4 места' },
+  { value: '5', label: '5 мест' },
+  { value: '6', label: '6 мест' },
+  { value: '7', label: '7 мест' },
+  { value: '8', label: '8 мест' },
+  { value: '9', label: '9 мест' },
+] as const
+
+// Canonical values normalized by app/sources/polovniautomobili/mapper.py's
 // _EQUIPMENT_NORMALIZED — kept in sync manually, same as the option lists above.
 export const EQUIPMENT_POPULAR = [
   { value: 'apple_carplay', label: 'Apple CarPlay' },

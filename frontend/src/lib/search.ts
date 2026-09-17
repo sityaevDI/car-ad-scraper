@@ -18,6 +18,8 @@ export interface SearchQuery {
   transmissions?: string[]
   body_types?: string[]
   interior_materials?: string[]
+  air_conditions?: string[]
+  seats?: string[]
   equipment?: string[]
   location?: string
 }

@@ -59,6 +59,7 @@ class StubAdapterWithEquipment(StubAdapter):
         listing = _listing(ref.external_id, 10_000)
         listing.equipment = ["bluetooth", "apple_carplay"]
         listing.interior_material = "combined_leather"
+        listing.air_condition = "automatic"
         return listing
 
 
@@ -313,9 +314,9 @@ async def test_run_scrape_mark_removed_uses_the_union_of_every_partition(session
 
 
 async def test_run_scrape_backfills_equipment_once_on_creation(session, monkeypatch):
-    """Search-page results don't carry equipment or interior_material (see mapper.py), so a new
-    listing gets one detail-page fetch to backfill both — but only once, not on every re-crawl of
-    the same listing.
+    """Search-page results don't carry equipment, interior_material, or air_condition (see
+    mapper.py), so a new listing gets one detail-page fetch to backfill all three — but only once,
+    not on every re-crawl of the same listing.
     """
     adapter_cls = _make_stub_adapter_with_equipment(["1"])
     monkeypatch.setitem(registry.SOURCE_REGISTRY, "stub_source", adapter_cls)
@@ -324,6 +325,7 @@ async def test_run_scrape_backfills_equipment_once_on_creation(session, monkeypa
     listing = (await session.execute(select(Listing))).scalar_one()
     assert listing.equipment == ["bluetooth", "apple_carplay"]
     assert listing.interior_material == "combined_leather"
+    assert listing.air_condition == "automatic"
     assert adapter_cls.fetch_listing_calls == ["1"]
 
 
@@ -348,6 +350,7 @@ async def test_run_scrape_survives_equipment_fetch_timeout(session, monkeypatch)
     listing = (await session.execute(select(Listing))).scalar_one()
     assert not listing.equipment
     assert listing.interior_material is None
+    assert listing.air_condition is None
 
 
 async def test_run_scrape_passes_admin_configured_rate_limit_to_adapter(session, monkeypatch):

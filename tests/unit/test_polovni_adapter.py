@@ -56,6 +56,10 @@ def test_parse_search_page_extracts_normalized_listings():
     assert all(x.fuel_type in {"diesel", "petrol", "hybrid", "electric", "lpg", "cng", None} for x in listings)
     assert all(x.transmission in {"automatic", "manual", None} for x in listings)
     assert first.image_url and first.image_url.startswith("https://cdn.polovniautomobili.com/")
+    # seats is reliably present on every search-result entry (unlike interior_material/
+    # air_condition — see mapper.py's docstring), so it's extracted here directly.
+    assert first.seats == "5"
+    assert all(x.seats is None or re.fullmatch(r"\d+", x.seats) for x in listings)
 
 
 def test_parse_listing_extracts_full_detail():
@@ -84,6 +88,12 @@ def test_parse_listing_extracts_full_detail():
     # interior_material is translated too (see mapper._INTERIOR_MATERIAL_NORMALIZED) — this
     # fixture's raw productData.interiorMaterial is "Štof"
     assert listing.interior_material == "cloth"
+    # air_condition is translated too (see mapper._AIR_CONDITION_NORMALIZED) — this fixture's raw
+    # productData.airCondition is "Automatska klima"
+    assert listing.air_condition == "automatic"
+    # seats is parsed from the same "N sedišta" display string as the search page (raw
+    # productData.seats is "5 sedišta")
+    assert listing.seats == "5"
 
 
 def test_parse_search_page_drops_entries_missing_a_required_field():
@@ -142,6 +152,17 @@ def test_parse_search_page_does_not_include_interior_material():
     # carries it (as a prefixed display string, not the clean value) inside a premium listing's
     # `featuredInfo`, not as a plain per-listing field like fuel/chassis/gearBox. See mapper.py.
     assert all(listing.interior_material is None for listing in listings)
+
+
+def test_parse_search_page_does_not_include_air_condition():
+    html = (FIXTURES / "search_page_01.html").read_text(encoding="utf-8")
+    adapter = PolovniAutomobiliSource()
+
+    listings, _ = adapter.parse_search_page(html)
+
+    # map_search_result doesn't read `airCondition` — the search/results page doesn't carry it at
+    # all, not even unreliably (unlike interior_material). See mapper.py.
+    assert all(listing.air_condition is None for listing in listings)
 
 
 def test_fetcher_is_configured_from_settings():
