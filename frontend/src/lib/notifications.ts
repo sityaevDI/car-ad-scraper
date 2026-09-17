@@ -20,4 +20,5 @@ export interface NotificationListOut {
 export const notificationsApi = {
   list: () => apiFetch<NotificationListOut>('/api/v1/me/notifications'),
   markRead: (id: string) => apiFetch<NotificationOut>(`/api/v1/me/notifications/${id}/read`, { method: 'POST' }),
+  remove: (id: string) => apiFetch<void>(`/api/v1/me/notifications/${id}`, { method: 'DELETE' }),
 }

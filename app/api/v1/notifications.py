@@ -76,3 +76,18 @@ async def mark_notification_read(
         await session.commit()
     (out,) = await _to_out_list([notification], session)
     return out
+
+
+@router.delete("/{notification_id}", status_code=204)
+async def delete_notification(
+    notification_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+    _csrf: None = Depends(require_csrf),
+) -> None:
+    repository = NotificationRepository(session)
+    notification = await repository.get_owned(notification_id, current_user.id)
+    if notification is None:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    await session.delete(notification)
+    await session.commit()

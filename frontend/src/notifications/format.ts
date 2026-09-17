@@ -23,6 +23,41 @@ export function notificationTitle(notification: NotificationOut): string {
   return TYPE_LABELS[notification.type] ?? notification.type
 }
 
+export type NotificationDateBucket = 'today' | 'yesterday' | 'week' | 'earlier'
+
+const BUCKET_LABELS: Record<NotificationDateBucket, string> = {
+  today: 'Сегодня',
+  yesterday: 'Вчера',
+  week: 'На этой неделе',
+  earlier: 'Ранее',
+}
+
+function notificationDateBucket(createdAt: string): NotificationDateBucket {
+  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+  const daysAgo = Math.floor((startOfDay(new Date()) - startOfDay(new Date(createdAt))) / 86_400_000)
+  if (daysAgo <= 0) return 'today'
+  if (daysAgo === 1) return 'yesterday'
+  if (daysAgo <= 7) return 'week'
+  return 'earlier'
+}
+
+// Groups an already created_at-desc-sorted list into date buckets for the notifications page,
+// preserving each bucket's relative order.
+export function groupNotificationsByDate<T extends { created_at: string }>(
+  notifications: T[],
+): { label: string; items: T[] }[] {
+  const buckets = new Map<NotificationDateBucket, T[]>()
+  for (const notification of notifications) {
+    const bucket = notificationDateBucket(notification.created_at)
+    const items = buckets.get(bucket)
+    if (items) items.push(notification)
+    else buckets.set(bucket, [notification])
+  }
+  return (['today', 'yesterday', 'week', 'earlier'] as const)
+    .filter((bucket) => buckets.has(bucket))
+    .map((bucket) => ({ label: BUCKET_LABELS[bucket], items: buckets.get(bucket)! }))
+}
+
 export function notificationDescription(notification: NotificationOut): string {
   const payload = notification.payload ?? {}
   const title = typeof payload.listing_title === 'string' ? payload.listing_title : null
