@@ -15,6 +15,7 @@ from app.market.repository import MarketRepository
 from app.market.segment import segment_criteria_for_listing
 from app.models.listing import Listing
 from app.models.source import Source
+from app.scraping.detail_only_fields import DETAIL_ONLY_FIELDS
 from app.scraping.fetch_outcome import FetchBlockedError, FetchOutcome, OutcomeCounter, ParserError
 from app.scraping.proxy import ProxyProvider
 from app.scraping.query_partitioning import partition_query
@@ -78,9 +79,9 @@ async def _search_listings(adapter: CarSource, query: SearchQuery) -> AsyncItera
 
 
 async def _enrich_with_detail(adapter: CarSource, repository: ListingRepository, listing: Listing) -> None:
-    """Search-page results don't carry `equipment`, a reliable `interior_material`, `air_condition`,
-    or `drive_type` at all (see mapper.py's docstring on the search vs. detail page JSON shapes),
-    so a brand-new listing gets one extra detail-page fetch here to backfill all four. Only done
+    """Search-page results don't reliably carry any of app/scraping/detail_only_fields.py's
+    DETAIL_ONLY_FIELDS (see mapper.py's docstring on the search vs. detail page JSON shapes), so a
+    brand-new listing gets one extra detail-page fetch here to backfill all of them. Only done
     once, on creation — none of these fields change over a listing's lifetime, so re-crawls of an
     already-known listing skip this and stay cheap.
     """
@@ -94,14 +95,10 @@ async def _enrich_with_detail(adapter: CarSource, repository: ListingRepository,
         # it). This fetch is a best-effort backfill on an otherwise-successful new listing, not
         # worth failing the whole crawl over one slow request.
         return
-    if detail.equipment:
-        repository.set_equipment(listing, detail.equipment)
-    if detail.interior_material:
-        repository.set_interior_material(listing, detail.interior_material)
-    if detail.air_condition:
-        repository.set_air_condition(listing, detail.air_condition)
-    if detail.drive_type:
-        repository.set_drive_type(listing, detail.drive_type)
+    for detail_field in DETAIL_ONLY_FIELDS.values():
+        value = detail_field.get(detail)
+        if value:
+            detail_field.set(repository, listing, value)
 
 
 async def run_scrape(
