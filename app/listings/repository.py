@@ -158,15 +158,26 @@ class ListingRepository:
 
         Returns the listings just marked removed (not just a count) — the caller uses them to mark
         their market segments dirty (a removal changes that segment's comparable sample).
+
+        Streams instead of `.scalars().all()`-ing every active listing for the source at once — on
+        a FULL_SOURCE_REFRESH that's effectively the whole table (tens of thousands of rows for
+        this source), which .all() would hold as live ORM objects in the session's identity map
+        for as long as the caller keeps the session open (see 2026-09-18 backend memory
+        investigation). A listing that's still active gets expunged immediately after the check —
+        it's untouched, so there's nothing pending to lose — while a listing this call actually
+        marks removed stays attached (the caller reads it right after, and it's a small subset of
+        the total).
         """
-        result = await self.session.execute(
+        result = await self.session.stream_scalars(
             select(Listing).where(Listing.source_id == source_id, Listing.status == ListingStatus.ACTIVE)
         )
         removed = []
-        for listing in result.scalars().all():
+        async for listing in result:
             if listing.external_id not in seen_external_ids:
                 listing.status = ListingStatus.REMOVED
                 removed.append(listing)
+            else:
+                self.session.expunge(listing)
         return removed
 
     def _add_snapshot(self, listing: Listing, data: SourceListing, captured_at: datetime) -> None:

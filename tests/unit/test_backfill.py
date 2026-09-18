@@ -3,6 +3,7 @@ from sqlalchemy import select
 
 import app.sources.registry as registry
 from app.models.listing import Listing
+from app.scraping import backfill as backfill_module
 from app.scraping.backfill import _backfill
 from app.scraping.detail_only_fields import DETAIL_ONLY_FIELDS
 from app.scraping.fetch_outcome import FetchBlockedError, FetchOutcome
@@ -102,6 +103,49 @@ async def test_backfill_fields_flag_limits_which_fields_are_queried_and_written(
     }
     assert refreshed["1"].drive_type is None  # not requested, left alone
     assert refreshed["2"].interior_material == "leather"
+
+
+async def test_backfill_paginates_across_multiple_batches(session, monkeypatch):
+    """The keyset-pagination loop (id > last_id, ordered by id) must not skip or double-process a
+    row at a batch boundary — this is the whole reason it exists over a single stream_scalars()
+    cursor (see backfill.py's comment: a live cursor doesn't survive the periodic commit each
+    batch needs against real Postgres/asyncpg).
+    """
+    monkeypatch.setitem(registry.SOURCE_REGISTRY, "polovniautomobili", _StubAdapter)
+    monkeypatch.setattr(backfill_module, "_BATCH_SIZE", 2)
+    _StubAdapter.fetch_listing_calls = []
+    source = await seed_source(session)
+
+    external_ids = [str(i) for i in range(5)]
+    for external_id in external_ids:
+        session.add(make_listing(source.id, external_id=external_id, interior_material=None))
+    await session.commit()
+
+    await _backfill(
+        session, source_code="polovniautomobili", fields=[DETAIL_ONLY_FIELDS["interior_material"]], limit=None
+    )
+
+    # Every listing fetched exactly once, none skipped or repeated, despite 5 rows over batches of 2.
+    assert sorted(_StubAdapter.fetch_listing_calls) == sorted(external_ids)
+    refreshed = (await session.execute(select(Listing))).scalars().all()
+    assert all(listing.interior_material == "leather" for listing in refreshed)
+
+
+async def test_backfill_limit_applies_across_batch_boundaries(session, monkeypatch):
+    monkeypatch.setitem(registry.SOURCE_REGISTRY, "polovniautomobili", _StubAdapter)
+    monkeypatch.setattr(backfill_module, "_BATCH_SIZE", 2)
+    _StubAdapter.fetch_listing_calls = []
+    source = await seed_source(session)
+
+    for external_id in (str(i) for i in range(5)):
+        session.add(make_listing(source.id, external_id=external_id, interior_material=None))
+    await session.commit()
+
+    await _backfill(
+        session, source_code="polovniautomobili", fields=[DETAIL_ONLY_FIELDS["interior_material"]], limit=3
+    )
+
+    assert len(_StubAdapter.fetch_listing_calls) == 3
 
 
 async def test_backfill_skips_blocked_listings_without_aborting(session, monkeypatch):

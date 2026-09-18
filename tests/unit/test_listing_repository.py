@@ -2,10 +2,10 @@ import pytest
 from sqlalchemy import func, select
 
 from app.listings.repository import ListingRepository
-from app.models.listing import Listing
+from app.models.listing import Listing, ListingStatus
 from app.models.snapshot import ListingSnapshot
 from app.sources.base import SourceListing
-from tests.conftest import seed_source
+from tests.conftest import make_listing, seed_source
 
 
 def _listing(external_id: str = "42", price: int = 10_000) -> SourceListing:
@@ -84,3 +84,45 @@ async def test_upsert_listing_concurrent_insert_falls_back_to_update(session, mo
         select(func.count()).select_from(ListingSnapshot).where(ListingSnapshot.listing_id == winning_listing.id)
     )
     assert snapshot_count == 2
+
+
+@pytest.mark.asyncio
+async def test_mark_missing_as_removed_only_marks_listings_not_seen(session):
+    source = await seed_source(session)
+    repo = ListingRepository(session)
+
+    seen = make_listing(source.id, external_id="seen")
+    missing = make_listing(source.id, external_id="missing")
+    session.add(seen)
+    session.add(missing)
+    await session.commit()
+
+    removed = await repo.mark_missing_as_removed(source.id, {"seen"})
+
+    assert [listing.external_id for listing in removed] == ["missing"]
+    assert missing.status == ListingStatus.REMOVED
+    assert seen.status == ListingStatus.ACTIVE
+
+
+@pytest.mark.asyncio
+async def test_mark_missing_as_removed_expunges_still_active_listings(session):
+    """Streams instead of `.scalars().all()`-ing every active listing for the source (see the
+    method's own docstring) — a listing that's still active gets expunged right after the check,
+    since it's untouched and there's nothing pending to lose. Only the (usually much smaller) set
+    actually marked removed should remain resident in the session's identity map afterward.
+    """
+    source = await seed_source(session)
+    repo = ListingRepository(session)
+
+    for external_id in ("seen-1", "seen-2", "seen-3"):
+        session.add(make_listing(source.id, external_id=external_id))
+    missing = make_listing(source.id, external_id="missing")
+    session.add(missing)
+    await session.commit()
+
+    removed = await repo.mark_missing_as_removed(source.id, {"seen-1", "seen-2", "seen-3"})
+
+    assert [listing.external_id for listing in removed] == ["missing"]
+    listings_in_identity_map = [obj for obj in session.identity_map.values() if isinstance(obj, Listing)]
+    assert len(listings_in_identity_map) == 1
+    assert listings_in_identity_map[0].external_id == "missing"
