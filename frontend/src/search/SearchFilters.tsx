@@ -3,6 +3,7 @@ import { useVehicleMakes } from './useVehicleMakes'
 import {
   AIR_CONDITION_OPTIONS,
   BODY_TYPE_OPTIONS,
+  DRIVE_TYPE_OPTIONS,
   FUEL_TYPE_OPTIONS,
   INTERIOR_MATERIAL_OPTIONS,
   SEATS_OPTIONS,
@@ -228,6 +229,12 @@ export function SearchFilters({
           options={AIR_CONDITION_OPTIONS}
           selected={value.air_conditions}
           onChange={(v) => onChange({ ...value, air_conditions: v })}
+        />
+        <CheckboxGroup
+          label="Привод"
+          options={DRIVE_TYPE_OPTIONS}
+          selected={value.drive_types}
+          onChange={(v) => onChange({ ...value, drive_types: v })}
         />
         <CheckboxGroup
           label="Количество мест"

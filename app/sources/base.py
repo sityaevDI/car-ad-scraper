@@ -41,6 +41,7 @@ class SourceListing:
     body_type: str | None = None
     interior_material: str | None = None
     air_condition: str | None = None
+    drive_type: str | None = None
     engine_volume_cc: int | None = None
     power_hp: int | None = None
     seats: str | None = None

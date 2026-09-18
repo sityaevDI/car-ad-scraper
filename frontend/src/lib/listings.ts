@@ -19,6 +19,7 @@ export interface ListingOut {
   body_type: string | null
   interior_material: string | null
   air_condition: string | null
+  drive_type: string | null
   engine_volume_cc: number | null
   power_hp: number | null
   seats: string | null

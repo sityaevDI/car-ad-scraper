@@ -19,6 +19,7 @@ export interface SearchQuery {
   body_types?: string[]
   interior_materials?: string[]
   air_conditions?: string[]
+  drive_types?: string[]
   seats?: string[]
   equipment?: string[]
   location?: string
@@ -45,6 +46,7 @@ export type GroupField =
   | 'engine_volume_cc'
   | 'body_type'
   | 'interior_material'
+  | 'drive_type'
 
 export const GROUP_FIELD_LABELS: Record<GroupField, string> = {
   make: 'Марка',
@@ -55,6 +57,7 @@ export const GROUP_FIELD_LABELS: Record<GroupField, string> = {
   engine_volume_cc: 'Объём двигателя',
   body_type: 'Кузов',
   interior_material: 'Материал салона',
+  drive_type: 'Привод',
 }
 
 // Mirrors SearchRequest.group_by's default in app/search/query.py.

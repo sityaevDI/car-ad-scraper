@@ -59,6 +59,19 @@ _AIR_CONDITION_NORMALIZED = {
     "Automatska klima": "automatic",
 }
 
+# Keys are the raw Serbian values from `productData.drive` (detail page only — like
+# `interiorMaterial`/`airCondition`, the search-results page doesn't reliably carry this field;
+# see map_product_data and app/scraping/pipeline.py's `_enrich_with_detail`). Matches the site's
+# own facet values (front/rear/4x4/4x4Reducer), confirmed against
+# tests/fixtures/polovniautomobili/search_page_01.html's drive filter definition and by applying
+# each as ?drive[]=<value> live on the site (2026-09-18).
+_DRIVE_TYPE_NORMALIZED = {
+    "Prednji": "front",
+    "Zadnji": "rear",
+    "4x4": "awd",
+    "4x4 reduktor": "awd_low_range",
+}
+
 _BODY_TYPE_NORMALIZED = {
     "Limuzina": "sedan",
     "Karavan": "wagon",
@@ -211,6 +224,12 @@ def normalize_air_condition(raw: str | None) -> str | None:
     return _AIR_CONDITION_NORMALIZED.get(raw, raw)
 
 
+def normalize_drive_type(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    return _DRIVE_TYPE_NORMALIZED.get(raw, raw)
+
+
 def normalize_seats(raw: str | None) -> str | None:
     """`raw` is a Serbian display string like "5 sedišta" (both `productData.seats` on the detail
     page and `seats` on each search-result entry use this same format) — pull out just the count,
@@ -312,5 +331,6 @@ def map_product_data(raw: dict, canonical_path: str | None = None) -> SourceList
         equipment=normalize_equipment(raw.get("equipment")),
         interior_material=normalize_interior_material(raw.get("interiorMaterial")),
         air_condition=normalize_air_condition(raw.get("airCondition")),
+        drive_type=normalize_drive_type(raw.get("drive")),
         raw=raw,
     )

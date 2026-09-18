@@ -11,6 +11,7 @@ import { PriceScoreBadge } from '../components/PriceScoreBadge'
 import {
   AIR_CONDITION_OPTIONS,
   BODY_TYPE_OPTIONS,
+  DRIVE_TYPE_OPTIONS,
   FUEL_TYPE_OPTIONS,
   INTERIOR_MATERIAL_OPTIONS,
   TRANSMISSION_OPTIONS,
@@ -23,6 +24,7 @@ const TAG_LABELS = new Map<string, string>(
     ...BODY_TYPE_OPTIONS,
     ...INTERIOR_MATERIAL_OPTIONS,
     ...AIR_CONDITION_OPTIONS,
+    ...DRIVE_TYPE_OPTIONS,
   ].map((o) => [o.value, o.label]),
 )
 
@@ -242,6 +244,7 @@ export function ListingDetailPage() {
               <Field label="Кузов" value={tag(listing.body_type)} />
               <Field label="Материал салона" value={tag(listing.interior_material)} />
               <Field label="Кондиционер" value={tag(listing.air_condition)} />
+              <Field label="Привод" value={tag(listing.drive_type)} />
               <Field label="Объём двигателя" value={listing.engine_volume_cc ? `${listing.engine_volume_cc} см³` : '—'} />
               <Field label="Мощность" value={listing.power_hp ? `${listing.power_hp} л.с.` : '—'} />
               <Field label="Количество мест" value={listing.seats ?? '—'} />
