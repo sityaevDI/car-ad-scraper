@@ -142,6 +142,12 @@ class ListingRepository:
         """
         listing.air_condition = air_condition
 
+    def set_drive_type(self, listing: Listing, drive_type: str | None) -> None:
+        """Same one-time detail-page backfill as set_air_condition — search-page results don't
+        reliably carry `drive` — see app/scraping/pipeline.py's `_enrich_with_detail`.
+        """
+        listing.drive_type = drive_type
+
     async def mark_missing_as_removed(self, source_id: uuid.UUID, seen_external_ids: set[str]) -> list[Listing]:
         """Mark active listings for a source that were not encountered in the latest crawl as
         removed. Never deletes rows — see docs/adr/17_AGENT_INSTRUCTIONS.md.

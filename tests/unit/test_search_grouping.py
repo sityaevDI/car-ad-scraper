@@ -100,6 +100,20 @@ async def test_filters_by_air_condition(session):
     assert response.groups[0].price_min == 11_000
 
 
+async def test_filters_by_drive_type(session):
+    source = await seed_source(session)
+    session.add(make_listing(source.id, price=11_000, drive_type="awd"))
+    session.add(make_listing(source.id, price=12_000, drive_type="front"))
+    session.add(make_listing(source.id, price=13_000, drive_type=None))
+    await session.commit()
+
+    request = SearchRequest(query=SearchQuery(drive_types=["awd"]))
+    response = await SearchService(session).search(request)
+
+    assert response.total_listings == 1
+    assert response.groups[0].price_min == 11_000
+
+
 async def test_filters_by_seats(session):
     source = await seed_source(session)
     session.add(make_listing(source.id, price=11_000, seats="5"))

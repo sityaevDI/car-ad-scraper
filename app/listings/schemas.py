@@ -26,6 +26,7 @@ class ListingOut(BaseModel):
     body_type: str | None
     interior_material: str | None
     air_condition: str | None
+    drive_type: str | None
     engine_volume_cc: int | None
     power_hp: int | None
     seats: str | None

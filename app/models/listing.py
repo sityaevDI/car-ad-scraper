@@ -56,6 +56,10 @@ class Listing(UUIDPkMixin, TimestampMixin, Base):
     # search-page results JSON doesn't carry it at all) — see app/scraping/pipeline.py's
     # `_enrich_with_detail`.
     air_condition: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # Same one-time detail-page backfill as `air_condition` above — the search-page results JSON
+    # doesn't carry `drive` at all (only sometimes, buried in a premium listing's
+    # `featuredInfo.drive` display string) — see app/scraping/pipeline.py's `_enrich_with_detail`.
+    drive_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
     engine_volume_cc: Mapped[int | None] = mapped_column(Integer, nullable=True)
     power_hp: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Unlike interior_material/air_condition, the search-results page carries this reliably (every

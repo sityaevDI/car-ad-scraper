@@ -6,6 +6,7 @@ import { StatusBadge } from './StatusBadge'
 import {
   AIR_CONDITION_OPTIONS,
   BODY_TYPE_OPTIONS,
+  DRIVE_TYPE_OPTIONS,
   FUEL_TYPE_OPTIONS,
   INTERIOR_MATERIAL_OPTIONS,
   TRANSMISSION_OPTIONS,
@@ -18,6 +19,7 @@ const TAG_LABELS = new Map<string, string>(
     ...BODY_TYPE_OPTIONS,
     ...INTERIOR_MATERIAL_OPTIONS,
     ...AIR_CONDITION_OPTIONS,
+    ...DRIVE_TYPE_OPTIONS,
   ].map((o) => [o.value, o.label]),
 )
 
@@ -33,6 +35,7 @@ export function ListingCard({ listing }: { listing: ListingOut }) {
     tag(listing.body_type),
     tag(listing.interior_material),
     tag(listing.air_condition),
+    tag(listing.drive_type),
   ].filter((t): t is string => Boolean(t))
 
   return (

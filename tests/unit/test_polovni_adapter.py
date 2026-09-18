@@ -86,6 +86,7 @@ def test_parse_listing_extracts_full_detail():
     assert listing.make == "Škoda"
     assert listing.model == "Octavia"
     assert listing.fuel_type == "diesel"
+    assert listing.drive_type == "front"
     assert listing.engine_volume_cc == 1968
     assert listing.mileage_km == 114_000
     assert listing.canonical_url == (

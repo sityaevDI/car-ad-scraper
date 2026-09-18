@@ -50,6 +50,17 @@ export const AIR_CONDITION_OPTIONS = [
   { value: 'automatic', label: 'Климат-контроль' },
 ] as const
 
+// Canonical values normalized by app/sources/polovniautomobili/mapper.py's
+// _DRIVE_TYPE_NORMALIZED — kept in sync manually, same as the option lists above. Only populated
+// from a listing's detail page (see that mapper's docstring), so filtering by this excludes
+// listings whose detail page hasn't been fetched/re-fetched yet.
+export const DRIVE_TYPE_OPTIONS = [
+  { value: 'front', label: 'Передний привод' },
+  { value: 'rear', label: 'Задний привод' },
+  { value: 'awd', label: 'Полный привод' },
+  { value: 'awd_low_range', label: 'Полный привод (с редуктором)' },
+] as const
+
 // Canonical values are the raw seat count as a string (see mapper.py's normalize_seats) — kept
 // in sync manually with the site's own "seats" facet (2-9).
 export const SEATS_OPTIONS = [

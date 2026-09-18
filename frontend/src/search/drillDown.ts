@@ -27,6 +27,9 @@ export function buildDrillDownQuery(baseQuery: SearchQuery, groupBy: GroupField[
       case 'body_type':
         next.body_types = [String(value)]
         break
+      case 'drive_type':
+        next.drive_types = [String(value)]
+        break
       case 'production_year':
         next.year_min = Number(value)
         next.year_max = Number(value)
