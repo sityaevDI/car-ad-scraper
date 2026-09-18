@@ -31,6 +31,20 @@ from app.sources.registry import get_source_adapter
 # the caller doesn't treat as a partial-success case (see app/scraping/worker.py's except clause).
 _COMMIT_BATCH_SIZE = 50
 
+# Every N upserted listings, drop the session's identity map (session.expunge_all()) instead of
+# holding every touched Listing/ListingSnapshot in memory for the whole run. SQLAlchemy never
+# releases an object it's loaded/created until it's expunged or the session ends — and this
+# session's expire_on_commit=False (app/db/session.py) means commit() alone doesn't even mark them
+# stale — so without this, a FULL_SOURCE_REFRESH touching tens of thousands of listings keeps all
+# of them resident in Python for the entire run (see 2026-09-18 backend memory investigation).
+# A separate, coarser cadence than _COMMIT_BATCH_SIZE: expunging is only safe right after a commit
+# (anything still pending would be discarded, not just detached), so this must stay a multiple of
+# _COMMIT_BATCH_SIZE — and expunging too often throws away the identity-map's benefit for a
+# listing genuinely re-encountered later in the same crawl (see build_search_url's renew_date_asc
+# comment on why re-encounters happen at all).
+_MEMORY_RELEASE_BATCH_SIZE = 500
+assert _MEMORY_RELEASE_BATCH_SIZE % _COMMIT_BATCH_SIZE == 0
+
 
 @dataclass
 class ScrapeStats:
@@ -119,6 +133,12 @@ async def run_scrape(
     counter = OutcomeCounter()
     rate_limit = await get_scrape_rate_limit(session)
     market_config = await get_market_config(session)
+    # Captured as plain values, not read off market_config/source again below: both are ORM
+    # objects that the periodic session.expunge_all() further down detaches from the session, and
+    # while expire_on_commit=False keeps their already-loaded attributes readable even detached,
+    # reading through the ORM objects post-expunge is a landmine for whoever edits this next (an
+    # attribute genuinely not yet loaded on a detached instance raises DetachedInstanceError).
+    mileage_bucket_km = market_config.mileage_bucket_km
     market_repo = MarketRepository(session)
     # delay/jitter/network_error_retry_delay are adapter-specific kwargs only PolovniAutomobiliSource
     # accepts today (see its __init__ docstring) — fine while it's the only registered source, but
@@ -135,6 +155,7 @@ async def run_scrape(
     source = await get_or_create_source(
         session, code=adapter.source_code, name=adapter.display_name, domain=adapter.domain, country=adapter.country
     )
+    source_id = source.id
     repository = ListingRepository(session)
 
     # A no-op ([query]) for a source that hasn't hit this problem (see query_partitioning.py's
@@ -148,7 +169,7 @@ async def run_scrape(
             async for source_listing in _search_listings(adapter, sub_query):
                 stats.listings_seen += 1
                 stats.seen_external_ids.add(source_listing.external_id)
-                listing, is_new, previous_price = await repository.upsert_listing(source.id, source_listing)
+                listing, is_new, previous_price = await repository.upsert_listing(source_id, source_listing)
                 if is_new:
                     stats.listings_created += 1
                     stats.new_listing_ids.append(listing.id)
@@ -164,13 +185,16 @@ async def run_scrape(
                 # same listing is rare enough on this scraper's cadence to not be worth marking
                 # dirty for.
                 if is_new or previous_price is not None:
-                    criteria = segment_criteria_for_listing(
-                        listing, mileage_bucket_km=market_config.mileage_bucket_km
-                    )
+                    criteria = segment_criteria_for_listing(listing, mileage_bucket_km=mileage_bucket_km)
                     await market_repo.mark_dirty(criteria)
 
                 if stats.listings_seen % _COMMIT_BATCH_SIZE == 0:
                     await session.commit()
+                    # Only ever right after a commit — expunging a pending (not yet flushed)
+                    # object would discard it instead of just detaching it. See
+                    # _MEMORY_RELEASE_BATCH_SIZE's comment for why this exists at all.
+                    if stats.listings_seen % _MEMORY_RELEASE_BATCH_SIZE == 0:
+                        session.expunge_all()
     except (FetchBlockedError, ParserError) as exc:
         # Stop pagination early but keep whatever was already upserted this run — a partial
         # result is more useful than losing it. This ends the whole partitioned crawl, not just
@@ -189,11 +213,11 @@ async def run_scrape(
         stats.blocked = True
 
     if mark_removed and not stats.blocked and stats.listings_seen > 0:
-        removed_listings = await repository.mark_missing_as_removed(source.id, stats.seen_external_ids)
+        removed_listings = await repository.mark_missing_as_removed(source_id, stats.seen_external_ids)
         stats.listings_removed = len(removed_listings)
         for listing in removed_listings:
             await market_repo.mark_dirty(
-                segment_criteria_for_listing(listing, mileage_bucket_km=market_config.mileage_bucket_km)
+                segment_criteria_for_listing(listing, mileage_bucket_km=mileage_bucket_km)
             )
 
     stats.outcome_counts = counter.as_dict()

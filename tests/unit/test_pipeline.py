@@ -2,6 +2,7 @@ from collections.abc import AsyncIterator
 
 from sqlalchemy import select
 
+import app.scraping.pipeline as pipeline_module
 import app.sources.registry as registry
 from app.models.listing import Listing, ListingStatus
 from app.models.market import MarketDirtySegment
@@ -312,6 +313,30 @@ async def test_run_scrape_mark_removed_uses_the_union_of_every_partition(session
         "3": ListingStatus.ACTIVE,
         "4": ListingStatus.REMOVED,
     }
+
+
+async def test_run_scrape_expunges_processed_listings_periodically(session, monkeypatch):
+    """The whole point of _MEMORY_RELEASE_BATCH_SIZE: a long crawl must not keep every touched
+    Listing resident in the session's identity map for its entire duration (2026-09-18 backend
+    memory investigation — see pipeline.py's comment on _MEMORY_RELEASE_BATCH_SIZE). Shrinks both
+    batch sizes to the same small value so this is observable without a five-hundred-listing crawl.
+    """
+    monkeypatch.setattr(pipeline_module, "_COMMIT_BATCH_SIZE", 2)
+    monkeypatch.setattr(pipeline_module, "_MEMORY_RELEASE_BATCH_SIZE", 2)
+    external_ids = [str(i) for i in range(5)]
+    monkeypatch.setitem(registry.SOURCE_REGISTRY, "stub_source", _make_stub_adapter(external_ids))
+
+    await run_scrape(session, source_code="stub_source", query=SearchQuery())
+
+    # Checked against the identity map directly, before any further query — re-querying would
+    # just re-attach everything and defeat the point of this assertion. Only whatever was upserted
+    # after the last expunge_all() (the final, incomplete batch) should still be resident; the
+    # rest were released by an earlier batch's release point.
+    listings_still_attached = [obj for obj in session.identity_map.values() if isinstance(obj, Listing)]
+    assert len(listings_still_attached) < 5
+
+    rows = (await session.execute(select(Listing))).scalars().all()
+    assert len(rows) == 5
 
 
 async def test_run_scrape_backfills_equipment_once_on_creation(session, monkeypatch):
