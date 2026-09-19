@@ -57,6 +57,34 @@ def _to_result(outcome: FetchOutcome, response: requests.Response | None, detail
     return FetchResult(outcome=outcome, text=response.text, status_code=response.status_code)
 
 
+# `timeout=` on `_http_request` only bounds a single socket operation (connect, or one read) —
+# `requests`/urllib3 resets that timer on every chunk received, so a connection that keeps
+# trickling a few bytes at a time (a stalled proxy tunnel, a server gone half-dead mid-response)
+# never trips it and can block the underlying thread indefinitely. That thread-level hang is
+# invisible to everything above it: app/scraping/worker.py's whole-job timeout is sized in hours
+# for a large FULL_SOURCE_REFRESH, so nothing notices for the better part of a day (reproduced in
+# production 2026-09-19: one such fetch wedged a FULL_SOURCE_REFRESH job for 10+ hours with the
+# worker otherwise idle — no exception, no log line, no CPU use). This wraps every
+# `_http_request` call in a hard wall-clock ceiling, independent of the socket's own behavior, so
+# a single fetch can never hold up more than a bounded slice of a crawl.
+_HARD_FETCH_TIMEOUT_MULTIPLIER = 3
+
+
+async def _run_http_request(
+    session: requests.Session, url: str, timeout: int, proxy_url: str | None
+) -> tuple[FetchOutcome, requests.Response | None, str | None]:
+    hard_deadline = timeout * _HARD_FETCH_TIMEOUT_MULTIPLIER
+    try:
+        return await asyncio.wait_for(
+            asyncio.to_thread(_http_request, session, url, timeout, proxy_url), timeout=hard_deadline
+        )
+    except TimeoutError:
+        # The underlying thread is still blocked in its socket call and stays that way — a
+        # concurrent.futures.Future already running can't be cancelled — but the crawl itself
+        # gets its thread of control back instead of waiting on it forever.
+        return FetchOutcome.TIMEOUT, None, f"hard fetch deadline of {hard_deadline}s exceeded (no response)"
+
+
 class _RequestPacer:
     """Sleeps so consecutive requests through one fetcher instance land `delay` ± `jitter` seconds
     apart — a courtesy to the source (docs/adr/05_ANTI_BOT_PROXY.md §8), not an anti-bot
@@ -100,7 +128,7 @@ class HttpFetcher:
         # force_proxy is accepted only to satisfy FetchStrategy — this fetcher has no proxy to
         # force, by design (see class docstring), so it's a no-op here.
         await self._pacer.wait()
-        outcome, response, detail = await asyncio.to_thread(_http_request, self.session, url, self.timeout, None)
+        outcome, response, detail = await _run_http_request(self.session, url, self.timeout, None)
         if self._outcome_sink is not None:
             self._outcome_sink(outcome)
         return _to_result(outcome, response, detail)
@@ -148,11 +176,11 @@ class ProxyHttpFetcher:
             self._outcome_sink(outcome)
 
     async def _direct(self, url: str) -> tuple[FetchOutcome, requests.Response | None, str | None]:
-        return await asyncio.to_thread(_http_request, self.session, url, self.timeout, None)
+        return await _run_http_request(self.session, url, self.timeout, None)
 
     async def _via_proxy(self, url: str, proxy: ProxyEndpoint) -> FetchResult:
-        proxy_outcome, proxy_response, proxy_detail = await asyncio.to_thread(
-            _http_request, self.session, url, self.timeout, proxy.url
+        proxy_outcome, proxy_response, proxy_detail = await _run_http_request(
+            self.session, url, self.timeout, proxy.url
         )
         self._record(proxy_outcome)
         if proxy_outcome == FetchOutcome.SUCCESS:
