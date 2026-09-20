@@ -134,6 +134,15 @@ async def run_scrape_job(ctx: dict[str, Any], job_id: str) -> None:
             # row stuck at RUNNING forever with no trace, which is exactly what silently happened
             # before this: `except Exception` let CancelledError straight through uncaught.
             await session.rollback()
+            # `job` may no longer be tracked by `session` at all: a crawl of any real size hits
+            # run_scrape's periodic session.expunge_all() (app/scraping/pipeline.py) well before
+            # failing, which detaches every object the session was holding, `job` included.
+            # Mutating a detached instance doesn't register it as dirty — commit() below would
+            # silently do nothing for it, leaving the row stuck at RUNNING with no error recorded
+            # (the same failure mode this rollback+reload already fixes for the IntegrityError
+            # branch above, just triggered by expunge instead of rollback's attribute-expiry).
+            job = await session.get(ScrapeJob, uuid.UUID(job_id))
+            assert job is not None
             job.status = ScrapeJobStatus.FAILED
             if isinstance(exc, (TimeoutError, asyncio.CancelledError)):
                 job.error = {
@@ -154,6 +163,15 @@ async def run_scrape_job(ctx: dict[str, Any], job_id: str) -> None:
 
         await generate_notifications_for_job(session, job, stats, enqueue_email=_enqueue_notification_email)
 
+        # Reload for the same reason as the exception branch above: a crawl this size has almost
+        # certainly gone through session.expunge_all() at least once by now, detaching `job`.
+        # Reproduced in production 2026-09-20: a FULL_SOURCE_REFRESH that touched ~2,200 listings
+        # returned clean (no exception, a normal arq success log) but its own row stayed RUNNING
+        # forever — job.status below was set on a floating object nothing was ever going to
+        # flush — which then blocked every later job for the same source via
+        # uq_scrape_jobs_one_running_per_source.
+        job = await session.get(ScrapeJob, uuid.UUID(job_id))
+        assert job is not None
         job.status = ScrapeJobStatus.PARTIAL if stats.blocked else ScrapeJobStatus.COMPLETED
         job.stats = {
             "listings_seen": stats.listings_seen,
