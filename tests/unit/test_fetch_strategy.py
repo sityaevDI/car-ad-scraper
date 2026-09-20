@@ -302,6 +302,22 @@ async def test_proxy_http_fetcher_records_both_attempts_via_sink(monkeypatch):
     assert outcomes == [FetchOutcome.RATE_LIMITED, FetchOutcome.SUCCESS]
 
 
+async def test_http_fetcher_times_out_when_socket_call_hangs_past_the_hard_deadline(monkeypatch):
+    """A trickling/half-open connection never trips `requests`' own per-read timeout (see
+    fetch_strategy.py's _run_http_request docstring) — this simulates that by having the "socket
+    call" just block longer than the hard deadline. `timeout=0.01` keeps the test fast: the hard
+    deadline is `timeout * _HARD_FETCH_TIMEOUT_MULTIPLIER`, so well under the 1s sleep below.
+    """
+    fetcher = HttpFetcher(timeout=0.01)
+    monkeypatch.setattr(fetcher.session, "get", lambda *a, **kw: (time.sleep(1), _response(200))[1])
+
+    result = await fetcher.fetch("https://example.com")
+
+    assert result.outcome == FetchOutcome.TIMEOUT
+    assert result.text is None
+    assert "hard fetch deadline" in result.detail
+
+
 async def test_playwright_fetcher_is_not_implemented():
     fetcher = PlaywrightFetcher()
 
