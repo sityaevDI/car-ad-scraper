@@ -12,7 +12,7 @@ from app.config import get_settings
 from app.models.notification import Notification, NotificationType
 
 
-def _listing_url(listing_id: uuid.UUID | None) -> str:
+def _listing_url(listing_id: uuid.UUID | str | None) -> str:
     if listing_id is None:
         return ""
     return f"{get_settings().frontend_base_url}/listings/{listing_id}"
@@ -62,6 +62,17 @@ def render_notification(notification: Notification) -> tuple[str, str]:
         lines = [f"По вашему поиску «{name}» ({description}):", f"Новых объявлений: {new_count}"]
         if updated_count:
             lines.append(f"Обновлено объявлений: {updated_count}")
+        new_listings = payload.get("new_listings") or []
+        if new_listings:
+            lines.append("")
+            for item in new_listings:
+                title = item.get("title", "Объявление")
+                price = item.get("price")
+                currency = item.get("currency", "")
+                listing_url = _listing_url(item.get("id"))
+                lines.append(f"- {title}: {price} {currency} — {listing_url}".rstrip())
+            if new_count > len(new_listings):
+                lines.append(f"...и ещё {new_count - len(new_listings)}")
         lines += ["", f"Смотреть: {search_url}"]
         body = "\n".join(lines)
         return subject, body

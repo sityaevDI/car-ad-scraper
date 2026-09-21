@@ -1,4 +1,4 @@
-import type { NotificationOut } from '../lib/notifications'
+import type { NewMatchListingPreview, NotificationOut } from '../lib/notifications'
 
 const TYPE_LABELS: Record<NotificationOut['type'], string> = {
   new_match: 'Новые объявления',
@@ -56,6 +56,28 @@ export function groupNotificationsByDate<T extends { created_at: string }>(
   return (['today', 'yesterday', 'week', 'earlier'] as const)
     .filter((bucket) => buckets.has(bucket))
     .map((bucket) => ({ label: BUCKET_LABELS[bucket], items: buckets.get(bucket)! }))
+}
+
+function isNewMatchListingPreview(value: unknown): value is NewMatchListingPreview {
+  if (!value || typeof value !== 'object') return false
+  const v = value as Record<string, unknown>
+  return typeof v.id === 'string' && typeof v.title === 'string' && typeof v.price === 'number'
+}
+
+// The specific new listings behind a NEW_MATCH notification's count, so a saved search matching
+// several listings at once shows *which* ones — a bare "N новых" count doesn't say what changed.
+// Capped server-side (app/notifications/matching.py::_NEW_LISTINGS_PREVIEW_LIMIT); the remainder
+// beyond this list is only reflected in payload.new_listings_count.
+export function notificationNewListingsPreview(notification: NotificationOut): NewMatchListingPreview[] {
+  if (notification.type !== 'new_match') return []
+  const raw = notification.payload?.new_listings
+  if (!Array.isArray(raw)) return []
+  return raw.filter(isNewMatchListingPreview)
+}
+
+export function notificationNewListingsCount(notification: NotificationOut): number {
+  const count = notification.payload?.new_listings_count
+  return typeof count === 'number' ? count : 0
 }
 
 export function notificationDescription(notification: NotificationOut): string {

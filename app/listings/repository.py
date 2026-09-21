@@ -45,11 +45,17 @@ class ListingRepository:
         )
         return result.scalar_one_or_none()
 
-    async def upsert_listing(self, source_id: uuid.UUID, data: SourceListing) -> tuple[Listing, bool, int | None]:
+    async def upsert_listing(
+        self, source_id: uuid.UUID, data: SourceListing
+    ) -> tuple[Listing, bool, bool, int | None]:
         """Insert a new Listing + its first Snapshot, or refresh an existing one and append a new
-        Snapshot only if price/mileage/title actually changed. Returns (listing, is_new,
-        previous_price) — previous_price is the price before this update, only set when the price
-        actually changed (used by app/notifications/matching.py to detect drops for #21/#26).
+        Snapshot only if price/mileage/title actually changed. Returns (listing, is_new, changed,
+        previous_price) — `changed` is False for an existing listing that was merely re-seen this
+        crawl with identical data (always True for a new listing); previous_price is the price
+        before this update, only set when the price actually changed (used by
+        app/notifications/matching.py to detect drops for #21/#26). `changed` itself is used by
+        app/scraping/pipeline.py to keep ScrapeStats.listings_updated meaning "genuinely changed",
+        not "re-encountered" (see that module's SAVED_SEARCH_REFRESH re-crawl comment).
 
         The insert is attempted inside a SAVEPOINT so a concurrent scrape of the same source
         racing us to create the same (source_id, external_id) row only aborts that SAVEPOINT,
@@ -96,13 +102,13 @@ class ListingRepository:
                     raise
             else:
                 self._add_snapshot(listing, data, now)
-                return listing, True, None
+                return listing, True, True, None
 
         return self._apply_update(existing, data, now)
 
     def _apply_update(
         self, existing: Listing, data: SourceListing, now: datetime
-    ) -> tuple[Listing, bool, int | None]:
+    ) -> tuple[Listing, bool, bool, int | None]:
         existing.last_seen_at = now
         existing.last_checked_at = now
         existing.status = ListingStatus.ACTIVE
@@ -122,7 +128,7 @@ class ListingRepository:
             existing.title = data.title
             self._add_snapshot(existing, data, now)
 
-        return existing, False, previous_price
+        return existing, False, changed, previous_price
 
     def set_equipment(self, listing: Listing, equipment: list[str]) -> None:
         """Called once, right after a new listing is created, with equipment parsed from its

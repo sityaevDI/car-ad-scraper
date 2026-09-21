@@ -474,6 +474,21 @@ async def test_run_scrape_marks_segment_dirty_on_price_change_not_on_no_op_recra
     assert len(dirty) == 1
 
 
+async def test_run_scrape_does_not_count_a_no_op_recrawl_as_updated(session, monkeypatch):
+    """A re-crawl that re-encounters an already-known listing with unchanged data must NOT bump
+    listings_updated — otherwise every SAVED_SEARCH_REFRESH tick reports "updated" listings and
+    app/notifications/matching.py fires a NEW_MATCH notification even though nothing changed.
+    """
+    monkeypatch.setitem(registry.SOURCE_REGISTRY, "stub_source", _make_stub_adapter(["1"]))
+    await run_scrape(session, source_code="stub_source", query=SearchQuery())
+
+    stats = await run_scrape(session, source_code="stub_source", query=SearchQuery())
+
+    assert stats.listings_seen == 1
+    assert stats.listings_created == 0
+    assert stats.listings_updated == 0
+
+
 async def test_run_scrape_marks_segment_dirty_for_removed_listing(session, monkeypatch):
     monkeypatch.setitem(registry.SOURCE_REGISTRY, "stub_source", _make_stub_adapter(["1", "2"]))
     await run_scrape(session, source_code="stub_source", query=SearchQuery(), mark_removed=True)
