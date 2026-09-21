@@ -27,9 +27,10 @@ async def test_upsert_listing_creates_new_listing_and_snapshot(session):
     source = await seed_source(session)
     repo = ListingRepository(session)
 
-    listing, is_new, previous_price = await repo.upsert_listing(source.id, _listing())
+    listing, is_new, changed, previous_price = await repo.upsert_listing(source.id, _listing())
 
     assert is_new is True
+    assert changed is True
     assert previous_price is None
     assert listing.external_id == "42"
 
@@ -51,7 +52,7 @@ async def test_upsert_listing_concurrent_insert_falls_back_to_update(session, mo
     repo = ListingRepository(session)
 
     other_job_repo = ListingRepository(session)
-    winning_listing, _, _ = await other_job_repo.upsert_listing(source.id, _listing(price=9_000))
+    winning_listing, _, _, _ = await other_job_repo.upsert_listing(source.id, _listing(price=9_000))
     await session.commit()
 
     real_find_existing = ListingRepository._find_existing
@@ -66,9 +67,10 @@ async def test_upsert_listing_concurrent_insert_falls_back_to_update(session, mo
 
     monkeypatch.setattr(ListingRepository, "_find_existing", flaky_find_existing)
 
-    listing, is_new, previous_price = await repo.upsert_listing(source.id, _listing(price=10_000))
+    listing, is_new, changed, previous_price = await repo.upsert_listing(source.id, _listing(price=10_000))
 
     assert is_new is False
+    assert changed is True
     assert listing.id == winning_listing.id
     assert previous_price == 9_000
     assert listing.price == 10_000
@@ -84,6 +86,31 @@ async def test_upsert_listing_concurrent_insert_falls_back_to_update(session, mo
         select(func.count()).select_from(ListingSnapshot).where(ListingSnapshot.listing_id == winning_listing.id)
     )
     assert snapshot_count == 2
+
+
+@pytest.mark.asyncio
+async def test_upsert_listing_re_encounter_with_identical_data_is_not_changed(session):
+    """A re-crawl that sees the same listing again with identical price/mileage/title (e.g. a
+    SAVED_SEARCH_REFRESH re-scraping an already-known listing, or the same ad appearing on two
+    pages within one crawl) must report changed=False — app/scraping/pipeline.py relies on this to
+    keep ScrapeStats.listings_updated meaning "genuinely changed", not "merely re-seen", which is
+    what previously caused a NEW_MATCH notification to fire on every single refresh regardless of
+    whether anything actually changed.
+    """
+    source = await seed_source(session)
+    repo = ListingRepository(session)
+
+    await repo.upsert_listing(source.id, _listing())
+    await session.commit()
+
+    listing, is_new, changed, previous_price = await repo.upsert_listing(source.id, _listing())
+
+    assert is_new is False
+    assert changed is False
+    assert previous_price is None
+
+    snapshots = await repo.get_history(listing.id)
+    assert len(snapshots) == 1
 
 
 @pytest.mark.asyncio

@@ -2,6 +2,13 @@ import { apiFetch } from './client'
 
 export type NotificationType = 'new_match' | 'price_drop' | 'listing_removed' | 'market_change'
 
+export interface NewMatchListingPreview {
+  id: string
+  title: string
+  price: number
+  currency: string
+}
+
 export interface NotificationOut {
   id: string
   type: NotificationType

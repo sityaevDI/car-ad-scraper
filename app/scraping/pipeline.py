@@ -169,12 +169,18 @@ async def run_scrape(
             async for source_listing in _search_listings(adapter, sub_query):
                 stats.listings_seen += 1
                 stats.seen_external_ids.add(source_listing.external_id)
-                listing, is_new, previous_price = await repository.upsert_listing(source_id, source_listing)
+                listing, is_new, changed, previous_price = await repository.upsert_listing(source_id, source_listing)
                 if is_new:
                     stats.listings_created += 1
                     stats.new_listing_ids.append(listing.id)
                     await _enrich_with_detail(adapter, repository, listing)
-                else:
+                elif changed:
+                    # Only a genuine price/mileage/title change counts as "updated" — a listing
+                    # merely re-encountered this crawl with identical data (e.g. the same ad
+                    # appearing on more than one page, or a routine re-crawl of an already-known
+                    # listing) must NOT bump this, or app/notifications/matching.py's
+                    # _notify_new_matches fires a NEW_MATCH notification on every single
+                    # SAVED_SEARCH_REFRESH tick even when nothing actually changed.
                     stats.listings_updated += 1
                     if previous_price is not None and previous_price > listing.price:
                         stats.price_drops.append((listing.id, previous_price, listing.price))
