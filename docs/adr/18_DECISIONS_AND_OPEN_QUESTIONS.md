@@ -16,6 +16,8 @@
 - Browser fetch fallback should be architecturally possible.
 - Paid priority should be implemented through queue priority/credits.
 - First production source should be Polovni Automobili.
+- Search and grouping (`POST /api/v1/search`) require an authenticated user, not anonymous browse —
+  see `03_FRONTEND.md` §9 for rationale.
 
 ## Open questions
 
