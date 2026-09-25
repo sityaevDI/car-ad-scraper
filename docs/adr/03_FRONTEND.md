@@ -146,6 +146,7 @@ power/location/status/first_seen_at/last_seen_at/last_checked_at) + таблиц
   `notification.py` — schema-only, без CRUD);
 - market/analytics page с ценовым score и confidence (`06_SEARCH_MARKET.md` §5-7 —
   `app/search/service.py` намеренно не считает market price в MVP, см. докстринг там же);
+  (исключение — статистика снятых объявлений без price score, см. `21_REMOVAL_STATS.md`);
 - admin dashboard (`13_ADMIN.md`) — нет `app/admin` роутов;
 - billing/subscription UI (`app/models/subscription.py` — schema-only).
 

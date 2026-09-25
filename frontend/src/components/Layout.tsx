@@ -33,11 +33,14 @@ export function Layout() {
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-          <Link to="/" className="text-lg font-semibold text-slate-900">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
+          <Link to="/" className="whitespace-nowrap text-lg font-semibold text-slate-900">
             Car Aggregator
           </Link>
-          <nav className="flex items-center gap-4 text-sm">
+          <nav className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+            <Link to="/market/removed" className="font-medium text-slate-700 hover:text-slate-900">
+              Статистика
+            </Link>
             {isLoading ? null : user ? (
               <>
                 <Link to="/saved-searches" className="font-medium text-slate-700 hover:text-slate-900">
