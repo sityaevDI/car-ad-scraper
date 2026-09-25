@@ -25,7 +25,11 @@ from app.notifications.matching import generate_notifications_for_job
 from app.scraping.pipeline import run_scrape
 from app.scraping.proxy import get_proxy_provider
 from app.scraping.rate_limit import get_scrape_rate_limit
-from app.scraping.scheduler import run_due_saved_search_scrapes, run_due_scheduled_scrapes
+from app.scraping.scheduler import (
+    recompute_dirty_market_segments,
+    run_due_saved_search_scrapes,
+    run_due_scheduled_scrapes,
+)
 from app.scraping.schemas import decode_job_query
 
 # arq's own ceiling on the whole run_scrape_job call (it wraps every job in its own
@@ -41,7 +45,7 @@ _ARQ_HARD_TIMEOUT_SECONDS = 24 * 60 * 60
 # Romeo" — both silently cancelled mid-crawl and left stuck at RUNNING forever).
 #
 # Worst case per page is 1 search-page fetch + one equipment-detail fetch per listing on that page
-# (every listing turns out to be brand new — see pipeline.py's _enrich_with_equipment). 25 matches
+# (every listing turns out to be brand new — see pipeline.py's _enrich_with_detail). 25 matches
 # the resultsPerPage Polovni Automobili actually returns (tests/fixtures/polovniautomobili/
 # search_page_01.html) — not load-bearing on real scraping behavior, just the assumption this
 # estimate is built on. Each of those requests is paced up to delay+jitter apart. The floor keeps
@@ -131,6 +135,15 @@ async def run_scrape_job(ctx: dict[str, Any], job_id: str) -> None:
             # row stuck at RUNNING forever with no trace, which is exactly what silently happened
             # before this: `except Exception` let CancelledError straight through uncaught.
             await session.rollback()
+            # `job` may no longer be tracked by `session` at all: a crawl of any real size hits
+            # run_scrape's periodic session.expunge_all() (app/scraping/pipeline.py) well before
+            # failing, which detaches every object the session was holding, `job` included.
+            # Mutating a detached instance doesn't register it as dirty — commit() below would
+            # silently do nothing for it, leaving the row stuck at RUNNING with no error recorded
+            # (the same failure mode this rollback+reload already fixes for the IntegrityError
+            # branch above, just triggered by expunge instead of rollback's attribute-expiry).
+            job = await session.get(ScrapeJob, uuid.UUID(job_id))
+            assert job is not None
             job.status = ScrapeJobStatus.FAILED
             if isinstance(exc, (TimeoutError, asyncio.CancelledError)):
                 job.error = {
@@ -151,6 +164,15 @@ async def run_scrape_job(ctx: dict[str, Any], job_id: str) -> None:
 
         await generate_notifications_for_job(session, job, stats, enqueue_email=_enqueue_notification_email)
 
+        # Reload for the same reason as the exception branch above: a crawl this size has almost
+        # certainly gone through session.expunge_all() at least once by now, detaching `job`.
+        # Reproduced in production 2026-09-20: a FULL_SOURCE_REFRESH that touched ~2,200 listings
+        # returned clean (no exception, a normal arq success log) but its own row stayed RUNNING
+        # forever — job.status below was set on a floating object nothing was ever going to
+        # flush — which then blocked every later job for the same source via
+        # uq_scrape_jobs_one_running_per_source.
+        job = await session.get(ScrapeJob, uuid.UUID(job_id))
+        assert job is not None
         job.status = ScrapeJobStatus.PARTIAL if stats.blocked else ScrapeJobStatus.COMPLETED
         job.stats = {
             "listings_seen": stats.listings_seen,
@@ -169,6 +191,7 @@ class WorkerSettings:
     cron_jobs = [
         cron(run_due_scheduled_scrapes, second=0),
         cron(run_due_saved_search_scrapes, second=0),
+        cron(recompute_dirty_market_segments, second=0),
         # Also at startup so a fresh deploy doesn't show an empty stats page until the next slot.
         cron(run_refresh_removal_stats, hour={3, 15}, minute=10, second=0, run_at_startup=True),
     ]

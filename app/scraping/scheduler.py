@@ -9,6 +9,7 @@ from typing import Any
 from sqlalchemy import select
 
 from app.config import get_settings
+from app.market.service import MarketPriceService
 from app.models.scheduled_scrape import ScheduledScrape
 from app.models.scrape_job import ScrapeJob, ScrapeJobStatus, ScrapeJobType
 from app.models.source import Source
@@ -17,6 +18,11 @@ from app.scraping.schemas import encode_job_query
 from app.search.query import SearchQuery
 
 _SAVED_SEARCH_MAX_PAGES = 5
+
+# Dirty segments processed per cron tick. This cron runs every minute (see WorkerSettings.cron_jobs
+# in app/scraping/worker.py) same as the other two, so a queue deeper than this just clears over a
+# few more ticks rather than blocking anything — no need to size it to "clear everything at once".
+_MARKET_RECOMPUTE_BATCH_SIZE = 200
 
 
 async def run_due_scheduled_scrapes(ctx: dict[str, Any]) -> None:
@@ -76,3 +82,15 @@ async def run_due_saved_search_scrapes(ctx: dict[str, Any]) -> None:
 
             saved_search.last_run_at = now
             await session.commit()
+
+
+async def recompute_dirty_market_segments(ctx: dict[str, Any]) -> None:
+    """Batch half of the event-driven market price cadence (see app/market/__init__.py) — the
+    other half is app/scraping/pipeline.py marking a segment dirty the moment a listing in it
+    changes. One commit per tick; a segment left in the queue past `_MARKET_RECOMPUTE_BATCH_SIZE`
+    just gets picked up on the next minute's tick instead of blocking this one.
+    """
+    session_factory = ctx["session_factory"]
+    async with session_factory() as session:
+        await MarketPriceService(session).recompute_due(_MARKET_RECOMPUTE_BATCH_SIZE)
+        await session.commit()

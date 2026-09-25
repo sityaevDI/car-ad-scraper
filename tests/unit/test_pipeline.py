@@ -2,8 +2,10 @@ from collections.abc import AsyncIterator
 
 from sqlalchemy import select
 
+import app.scraping.pipeline as pipeline_module
 import app.sources.registry as registry
 from app.models.listing import Listing, ListingStatus
+from app.models.market import MarketDirtySegment
 from app.models.scrape_rate_limit import ScrapeRateLimit
 from app.scraping.fetch_outcome import FetchBlockedError, FetchOutcome, ParserError
 from app.scraping.pipeline import _COMMIT_BATCH_SIZE, run_scrape
@@ -57,6 +59,9 @@ class StubAdapterWithEquipment(StubAdapter):
         self.fetch_listing_calls.append(ref.external_id)
         listing = _listing(ref.external_id, 10_000)
         listing.equipment = ["bluetooth", "apple_carplay"]
+        listing.interior_material = "combined_leather"
+        listing.air_condition = "automatic"
+        listing.drive_type = "awd"
         return listing
 
 
@@ -310,9 +315,34 @@ async def test_run_scrape_mark_removed_uses_the_union_of_every_partition(session
     }
 
 
+async def test_run_scrape_expunges_processed_listings_periodically(session, monkeypatch):
+    """The whole point of _MEMORY_RELEASE_BATCH_SIZE: a long crawl must not keep every touched
+    Listing resident in the session's identity map for its entire duration (2026-09-18 backend
+    memory investigation — see pipeline.py's comment on _MEMORY_RELEASE_BATCH_SIZE). Shrinks both
+    batch sizes to the same small value so this is observable without a five-hundred-listing crawl.
+    """
+    monkeypatch.setattr(pipeline_module, "_COMMIT_BATCH_SIZE", 2)
+    monkeypatch.setattr(pipeline_module, "_MEMORY_RELEASE_BATCH_SIZE", 2)
+    external_ids = [str(i) for i in range(5)]
+    monkeypatch.setitem(registry.SOURCE_REGISTRY, "stub_source", _make_stub_adapter(external_ids))
+
+    await run_scrape(session, source_code="stub_source", query=SearchQuery())
+
+    # Checked against the identity map directly, before any further query — re-querying would
+    # just re-attach everything and defeat the point of this assertion. Only whatever was upserted
+    # after the last expunge_all() (the final, incomplete batch) should still be resident; the
+    # rest were released by an earlier batch's release point.
+    listings_still_attached = [obj for obj in session.identity_map.values() if isinstance(obj, Listing)]
+    assert len(listings_still_attached) < 5
+
+    rows = (await session.execute(select(Listing))).scalars().all()
+    assert len(rows) == 5
+
+
 async def test_run_scrape_backfills_equipment_once_on_creation(session, monkeypatch):
-    """Search-page results don't carry equipment (see mapper.py), so a new listing gets one
-    detail-page fetch to backfill it — but only once, not on every re-crawl of the same listing.
+    """Search-page results don't carry equipment, interior_material, air_condition, or drive_type
+    (see mapper.py), so a new listing gets one detail-page fetch to backfill all four — but only
+    once, not on every re-crawl of the same listing.
     """
     adapter_cls = _make_stub_adapter_with_equipment(["1"])
     monkeypatch.setitem(registry.SOURCE_REGISTRY, "stub_source", adapter_cls)
@@ -320,6 +350,9 @@ async def test_run_scrape_backfills_equipment_once_on_creation(session, monkeypa
     await run_scrape(session, source_code="stub_source", query=SearchQuery())
     listing = (await session.execute(select(Listing))).scalar_one()
     assert listing.equipment == ["bluetooth", "apple_carplay"]
+    assert listing.interior_material == "combined_leather"
+    assert listing.air_condition == "automatic"
+    assert listing.drive_type == "awd"
     assert adapter_cls.fetch_listing_calls == ["1"]
 
 
@@ -343,6 +376,9 @@ async def test_run_scrape_survives_equipment_fetch_timeout(session, monkeypatch)
     assert stats.blocked is False
     listing = (await session.execute(select(Listing))).scalar_one()
     assert not listing.equipment
+    assert listing.interior_material is None
+    assert listing.air_condition is None
+    assert listing.drive_type is None
 
 
 async def test_run_scrape_passes_admin_configured_rate_limit_to_adapter(session, monkeypatch):
@@ -404,3 +440,64 @@ async def test_run_scrape_commits_periodically_during_a_long_crawl(session, monk
 
     persisted = (await session.execute(select(Listing))).scalars().all()
     assert len(persisted) == len(external_ids)
+
+
+async def test_run_scrape_marks_segment_dirty_for_new_listing(session, monkeypatch):
+    monkeypatch.setitem(registry.SOURCE_REGISTRY, "stub_source", _make_stub_adapter(["1"]))
+
+    await run_scrape(session, source_code="stub_source", query=SearchQuery())
+
+    dirty = (await session.execute(select(MarketDirtySegment))).scalars().all()
+    assert len(dirty) == 1
+    assert dirty[0].make == "skoda"
+    assert dirty[0].model == "octavia"
+
+
+async def test_run_scrape_marks_segment_dirty_on_price_change_not_on_no_op_recrawl(session, monkeypatch):
+    monkeypatch.setitem(registry.SOURCE_REGISTRY, "stub_source", _make_stub_adapter(["1"]))
+    await run_scrape(session, source_code="stub_source", query=SearchQuery())
+    # The first crawl's dirty mark is consumed by the recompute cron in real operation — simulate
+    # that here by clearing it, so this test only observes marks from the second crawl below.
+    await session.execute(MarketDirtySegment.__table__.delete())
+    await session.commit()
+
+    class PriceDropAdapter(StubAdapter):
+        external_ids = ["1"]
+
+        async def search_with_data(self, query):
+            yield _listing("1", 9_000)
+
+    monkeypatch.setitem(registry.SOURCE_REGISTRY, "stub_source", PriceDropAdapter)
+    await run_scrape(session, source_code="stub_source", query=SearchQuery())
+
+    dirty = (await session.execute(select(MarketDirtySegment))).scalars().all()
+    assert len(dirty) == 1
+
+
+async def test_run_scrape_does_not_count_a_no_op_recrawl_as_updated(session, monkeypatch):
+    """A re-crawl that re-encounters an already-known listing with unchanged data must NOT bump
+    listings_updated — otherwise every SAVED_SEARCH_REFRESH tick reports "updated" listings and
+    app/notifications/matching.py fires a NEW_MATCH notification even though nothing changed.
+    """
+    monkeypatch.setitem(registry.SOURCE_REGISTRY, "stub_source", _make_stub_adapter(["1"]))
+    await run_scrape(session, source_code="stub_source", query=SearchQuery())
+
+    stats = await run_scrape(session, source_code="stub_source", query=SearchQuery())
+
+    assert stats.listings_seen == 1
+    assert stats.listings_created == 0
+    assert stats.listings_updated == 0
+
+
+async def test_run_scrape_marks_segment_dirty_for_removed_listing(session, monkeypatch):
+    monkeypatch.setitem(registry.SOURCE_REGISTRY, "stub_source", _make_stub_adapter(["1", "2"]))
+    await run_scrape(session, source_code="stub_source", query=SearchQuery(), mark_removed=True)
+    await session.execute(MarketDirtySegment.__table__.delete())
+    await session.commit()
+
+    monkeypatch.setitem(registry.SOURCE_REGISTRY, "stub_source", _make_stub_adapter(["1"]))
+    stats = await run_scrape(session, source_code="stub_source", query=SearchQuery(), mark_removed=True)
+
+    assert stats.listings_removed == 1
+    dirty = (await session.execute(select(MarketDirtySegment))).scalars().all()
+    assert len(dirty) == 1

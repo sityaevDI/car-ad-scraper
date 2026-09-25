@@ -19,10 +19,10 @@ export function App() {
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route path="/" element={<SearchPage />} />
         <Route path="/listings/:id" element={<ListingDetailPage />} />
         <Route path="/market/removed" element={<RemovedStatsPage />} />
         <Route element={<RequireAuth />}>
+          <Route path="/" element={<SearchPage />} />
           <Route path="/saved-searches" element={<SavedSearchesPage />} />
           <Route path="/saved-searches/:id" element={<OpenSavedSearchPage />} />
           <Route path="/notifications" element={<NotificationsPage />} />

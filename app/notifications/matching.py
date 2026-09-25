@@ -4,6 +4,7 @@ app/scraping/worker.py::run_scrape_job once a job finishes. See issues #21 (PRIC
 Follow) and #26 (NEW_MATCH via SavedSearch).
 """
 
+import uuid
 from collections.abc import Awaitable, Callable
 
 from sqlalchemy import select
@@ -20,6 +21,12 @@ from app.scraping.schemas import decode_job_query
 from app.search.query import SearchQuery
 
 EmailEnqueuer = Callable[[str], Awaitable[None]]
+
+# Cap on how many of this run's new listings ride along in a NEW_MATCH notification's payload —
+# a saved search matching hundreds of new listings in one run shouldn't balloon every notification
+# row; the UI shows "+N more" beyond this using new_listings_count, which always carries the full
+# total.
+_NEW_LISTINGS_PREVIEW_LIMIT = 5
 
 
 async def generate_notifications_for_job(
@@ -64,6 +71,28 @@ async def _find_matching_saved_searches(session: AsyncSession, query_hash: str) 
     ]
 
 
+async def _new_listings_preview(session: AsyncSession, listing_ids: list[uuid.UUID]) -> list[dict]:
+    """Up to _NEW_LISTINGS_PREVIEW_LIMIT of this run's new listings, in enough detail for the UI
+    to show *which* listings matched instead of just a count — a grouped NEW_MATCH notification
+    otherwise gives no way to tell what actually changed.
+    """
+    preview_ids = listing_ids[:_NEW_LISTINGS_PREVIEW_LIMIT]
+    if not preview_ids:
+        return []
+    result = await session.execute(select(Listing).where(Listing.id.in_(preview_ids)))
+    listings_by_id = {listing.id: listing for listing in result.scalars().all()}
+    return [
+        {
+            "id": str(listing.id),
+            "title": listing.title,
+            "price": listing.price,
+            "currency": listing.currency,
+        }
+        for listing_id in preview_ids
+        if (listing := listings_by_id.get(listing_id)) is not None
+    ]
+
+
 async def _notify_new_matches(
     session: AsyncSession, service: NotificationService, job: ScrapeJob, stats: ScrapeStats
 ) -> None:
@@ -81,6 +110,7 @@ async def _notify_new_matches(
 
     new_count = len(stats.new_listing_ids)
     updated_count = stats.listings_updated
+    new_listings = await _new_listings_preview(session, stats.new_listing_ids)
     for saved_search in matching_saved_searches:
         await service.notify(
             saved_search.user_id,
@@ -90,6 +120,7 @@ async def _notify_new_matches(
                 "saved_search_name": saved_search.name,
                 "new_listings_count": new_count,
                 "updated_listings_count": updated_count,
+                "new_listings": new_listings,
                 "query_description": job_query.describe(),
             },
         )

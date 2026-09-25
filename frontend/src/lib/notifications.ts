@@ -2,6 +2,13 @@ import { apiFetch } from './client'
 
 export type NotificationType = 'new_match' | 'price_drop' | 'listing_removed' | 'market_change'
 
+export interface NewMatchListingPreview {
+  id: string
+  title: string
+  price: number
+  currency: string
+}
+
 export interface NotificationOut {
   id: string
   type: NotificationType
@@ -20,4 +27,5 @@ export interface NotificationListOut {
 export const notificationsApi = {
   list: () => apiFetch<NotificationListOut>('/api/v1/me/notifications'),
   markRead: (id: string) => apiFetch<NotificationOut>(`/api/v1/me/notifications/${id}/read`, { method: 'POST' }),
+  remove: (id: string) => apiFetch<void>(`/api/v1/me/notifications/${id}`, { method: 'DELETE' }),
 }

@@ -1,8 +1,10 @@
 """Grouped/flat search over Listings. See docs/adr/06_SEARCH_MARKET.md.
 
-Deliberately does *not* compute a market price/score/confidence — per the MVP scope decision, a
-price/year/mileage range per group is enough signal for the user to judge a group at a glance.
-That statistical layer (docs/adr/06_SEARCH_MARKET.md §5-8) is a later phase.
+Grouped results deliberately do *not* carry a market price/score — a user-chosen `group_by`
+combination isn't the same thing as a market segment (app/market/segment.py), and conflating them
+is a scope trap (see the plan behind #16/#18/#19). Flat (ungrouped) results *do* get a per-listing
+price_score (app/market/service.py::estimate_for_listings), since each row there is a single real
+listing with its own well-defined segment.
 """
 
 from dataclasses import dataclass
@@ -12,15 +14,21 @@ from sqlalchemy import ColumnElement, Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.listings.schemas import ListingOut
+from app.market.segment import ENGINE_VOLUME_BUCKET_SIZE
+from app.market.service import MarketPriceService
 from app.models.listing import Listing, ListingStatus
 from app.search.query import SearchQuery, SearchRequest
 from app.search.schemas import ListingGroupOut, SearchResponse
 
 # Real listings report exact engine displacement (1968/1998/2000cc are all "2.0"), which would
 # otherwise fragment one group into several near-duplicates — verified against live scrape data.
-# Round to the nearest 100cc, which still keeps genuinely different engines apart (e.g. Škoda's
-# 1.9 TDI at ~1896-1898cc buckets to 1900, separate from the 2.0 TDI bucket at 2000).
-_ENGINE_VOLUME_BUCKET = (((Listing.engine_volume_cc + 50) // 100) * 100).label("engine_volume_cc")
+# Round to the nearest 100cc (app/market/segment.py::ENGINE_VOLUME_BUCKET_SIZE, shared so this and
+# market segmentation never drift apart), which still keeps genuinely different engines apart (e.g.
+# Škoda's 1.9 TDI at ~1896-1898cc buckets to 1900, separate from the 2.0 TDI bucket at 2000).
+_ENGINE_VOLUME_BUCKET_HALF = ENGINE_VOLUME_BUCKET_SIZE // 2
+_ENGINE_VOLUME_BUCKET = (
+    ((Listing.engine_volume_cc + _ENGINE_VOLUME_BUCKET_HALF) // ENGINE_VOLUME_BUCKET_SIZE) * ENGINE_VOLUME_BUCKET_SIZE
+).label("engine_volume_cc")
 
 ALLOWED_GROUP_FIELDS = {
     "make": Listing.make,
@@ -30,6 +38,8 @@ ALLOWED_GROUP_FIELDS = {
     "transmission": Listing.transmission,
     "engine_volume_cc": _ENGINE_VOLUME_BUCKET,
     "body_type": Listing.body_type,
+    "interior_material": Listing.interior_material,
+    "drive_type": Listing.drive_type,
 }
 
 _FLAT_SORTS: dict[str, ColumnElement] = {
@@ -88,6 +98,14 @@ def _apply_filters(stmt: Select, query: SearchQuery) -> Select:
         stmt = stmt.where(Listing.transmission.in_(query.transmissions))
     if query.body_types:
         stmt = stmt.where(Listing.body_type.in_(query.body_types))
+    if query.interior_materials:
+        stmt = stmt.where(Listing.interior_material.in_(query.interior_materials))
+    if query.air_conditions:
+        stmt = stmt.where(Listing.air_condition.in_(query.air_conditions))
+    if query.drive_types:
+        stmt = stmt.where(Listing.drive_type.in_(query.drive_types))
+    if query.seats:
+        stmt = stmt.where(Listing.seats.in_(query.seats))
     if query.equipment:
         stmt = stmt.where(Listing.equipment.contains(query.equipment))
     if query.location:
@@ -109,6 +127,10 @@ def _build_label(group: dict) -> str:
         parts.append(str(group["transmission"]).title())
     if group.get("body_type"):
         parts.append(str(group["body_type"]).title())
+    if group.get("interior_material"):
+        parts.append(str(group["interior_material"]).title())
+    if group.get("drive_type"):
+        parts.append(str(group["drive_type"]).title())
     if group.get("production_year"):
         parts.append(str(group["production_year"]))
     return " ".join(parts) if parts else "Other"
@@ -133,8 +155,15 @@ class SearchService:
         stmt = base.order_by(order).offset(offset).limit(request.page_size)
         rows = (await self.session.execute(stmt)).scalars().all()
 
+        price_scores = await MarketPriceService(self.session).get_price_scores(list(rows))
+        listings = []
+        for row in rows:
+            listing_out = ListingOut.model_validate(row)
+            listing_out.price_score = price_scores.get(row.id)
+            listings.append(listing_out)
+
         return SearchResponse(
-            listings=[ListingOut.model_validate(row) for row in rows],
+            listings=listings,
             total_listings=total,
             page=request.page,
             page_size=request.page_size,

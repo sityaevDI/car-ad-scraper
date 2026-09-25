@@ -7,6 +7,8 @@ from app.auth.dependencies import get_current_user, get_current_user_optional, r
 from app.db.session import get_session
 from app.listings.repository import FollowRepository, ListingRepository
 from app.listings.schemas import ListingHistoryOut, ListingOut, ListingSnapshotOut
+from app.market.schemas import MarketComparisonOut
+from app.market.service import MarketPriceService
 from app.models.listing import Listing
 from app.models.user import User
 
@@ -17,6 +19,7 @@ async def _to_listing_out(listing: Listing, current_user: User | None, session: 
     out = ListingOut.model_validate(listing)
     if current_user is not None:
         out.is_following = await FollowRepository(session).get(current_user.id, listing.id) is not None
+    out.price_score = await MarketPriceService(session).get_price_score(listing)
     return out
 
 
@@ -55,6 +58,22 @@ async def unfollow_listing(
 ) -> None:
     await FollowRepository(session).unfollow(current_user.id, listing_id)
     await session.commit()
+
+
+@router.get("/{listing_id}/market-comparison", response_model=MarketComparisonOut)
+async def get_listing_market_comparison(
+    listing_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+) -> MarketComparisonOut:
+    """Never computes synchronously — see app/market/service.py. `market`/`price_score` are both
+    null in the response when no snapshot exists yet for this listing's segment (a freshly-scraped
+    segment hasn't hit the recompute cron yet); 404 is reserved for "listing not found", not for
+    that case.
+    """
+    listing = await ListingRepository(session).get_by_id(listing_id)
+    if listing is None:
+        raise HTTPException(status_code=404, detail="Listing not found")
+    return await MarketPriceService(session).get_market_comparison(listing)
 
 
 @router.get("/{listing_id}/history", response_model=ListingHistoryOut)

@@ -1,11 +1,26 @@
 import { Link } from 'react-router-dom'
 import { formatMileage, formatPrice } from '../lib/format'
 import type { ListingOut } from '../lib/listings'
+import { PriceScoreBadge } from './PriceScoreBadge'
 import { StatusBadge } from './StatusBadge'
-import { FUEL_TYPE_OPTIONS, TRANSMISSION_OPTIONS, BODY_TYPE_OPTIONS } from '../search/constants'
+import {
+  AIR_CONDITION_OPTIONS,
+  BODY_TYPE_OPTIONS,
+  DRIVE_TYPE_OPTIONS,
+  FUEL_TYPE_OPTIONS,
+  INTERIOR_MATERIAL_OPTIONS,
+  TRANSMISSION_OPTIONS,
+} from '../search/constants'
 
 const TAG_LABELS = new Map<string, string>(
-  [...FUEL_TYPE_OPTIONS, ...TRANSMISSION_OPTIONS, ...BODY_TYPE_OPTIONS].map((o) => [o.value, o.label]),
+  [
+    ...FUEL_TYPE_OPTIONS,
+    ...TRANSMISSION_OPTIONS,
+    ...BODY_TYPE_OPTIONS,
+    ...INTERIOR_MATERIAL_OPTIONS,
+    ...AIR_CONDITION_OPTIONS,
+    ...DRIVE_TYPE_OPTIONS,
+  ].map((o) => [o.value, o.label]),
 )
 
 function tag(value: string | null): string | null {
@@ -14,12 +29,17 @@ function tag(value: string | null): string | null {
 }
 
 export function ListingCard({ listing }: { listing: ListingOut }) {
-  const tags = [tag(listing.fuel_type), tag(listing.transmission), tag(listing.body_type)].filter(
-    (t): t is string => Boolean(t),
-  )
+  const tags = [
+    tag(listing.fuel_type),
+    tag(listing.transmission),
+    tag(listing.body_type),
+    tag(listing.interior_material),
+    tag(listing.air_condition),
+    tag(listing.drive_type),
+  ].filter((t): t is string => Boolean(t))
 
   return (
-    <div className="flex gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="relative flex gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300 hover:shadow-md">
       <div className="h-24 w-32 shrink-0 overflow-hidden rounded-md bg-slate-100">
         {listing.image_url ? (
           <img src={listing.image_url} alt={listing.title} className="h-full w-full object-cover" />
@@ -44,23 +64,28 @@ export function ListingCard({ listing }: { listing: ListingOut }) {
             ))}
           </div>
         )}
-        <div className="mt-auto flex items-end justify-between pt-2">
-          <span className="text-base font-semibold text-slate-900">{formatPrice(listing.price, listing.currency)}</span>
-          <div className="flex gap-3 text-xs">
-            <Link to={`/listings/${listing.id}`} className="font-medium text-slate-700 hover:underline">
-              Подробнее
-            </Link>
+        <div className="mt-auto flex items-end justify-between gap-2 pt-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-base font-semibold text-slate-900">{formatPrice(listing.price, listing.currency)}</span>
+            {listing.price_score && <PriceScoreBadge priceScore={listing.price_score} variant="short" />}
+          </div>
+          <div className="flex shrink-0 gap-3 text-xs">
+            <span className="font-medium text-slate-700">Подробнее</span>
+            {/* Positioned + z-10 so this link stays above the card-wide stretched link below and
+                keeps its own click behavior (new tab) instead of triggering the internal one. */}
             <a
               href={listing.canonical_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="font-medium text-slate-700 hover:underline"
+              className="relative z-10 font-medium text-slate-700 hover:underline"
             >
               Источник ↗
             </a>
           </div>
         </div>
       </div>
+      {/* Stretched link: makes the whole card (image, title, "Подробнее" text, etc.) clickable. */}
+      <Link to={`/listings/${listing.id}`} className="absolute inset-0 rounded-lg" aria-label={`Подробнее: ${listing.title}`} />
     </div>
   )
 }

@@ -47,8 +47,24 @@ class Listing(UUIDPkMixin, TimestampMixin, Base):
     fuel_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     transmission: Mapped[str | None] = mapped_column(String(32), nullable=True)
     body_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Backfilled once from the listing detail page, same as `equipment` below — search-page
+    # results don't reliably carry it (only sometimes, buried in a premium listing's
+    # `featuredInfo.interiorMaterial` display string) — see app/scraping/pipeline.py's
+    # `_enrich_with_detail`.
+    interior_material: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Same one-time detail-page backfill as `interior_material` above, for the same reason (the
+    # search-page results JSON doesn't carry it at all) — see app/scraping/pipeline.py's
+    # `_enrich_with_detail`.
+    air_condition: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # Same one-time detail-page backfill as `air_condition` above — the search-page results JSON
+    # doesn't carry `drive` at all (only sometimes, buried in a premium listing's
+    # `featuredInfo.drive` display string) — see app/scraping/pipeline.py's `_enrich_with_detail`.
+    drive_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
     engine_volume_cc: Mapped[int | None] = mapped_column(Integer, nullable=True)
     power_hp: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Unlike interior_material/air_condition, the search-results page carries this reliably (every
+    # entry has it) — set directly on creation, same as fuel_type/body_type below.
+    seats: Mapped[str | None] = mapped_column(String(4), nullable=True)
 
     location: Mapped[str | None] = mapped_column(String(255), nullable=True)
     seller_type: Mapped[str | None] = mapped_column(String(32), nullable=True)

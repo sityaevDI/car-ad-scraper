@@ -11,8 +11,8 @@ from app.db.base import Base
 from app.db.session import get_session
 from app.main import app
 from app.market.removal_stats import DAILY_SERIES_DAYS, MIN_MODEL_REMOVED, refresh_removal_stats
-from app.market.schemas import RemovalStatsResponse
-from app.market.service import RemovalStatsService
+from app.market.removal_schemas import RemovalStatsResponse
+from app.market.removal_service import RemovalStatsService
 from app.models.listing import ListingStatus
 from app.models.removal_stats import ALL_SCOPE, RemovalStats
 from app.models.snapshot import ListingSnapshot

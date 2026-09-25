@@ -53,9 +53,28 @@ def test_parse_search_page_extracts_normalized_listings():
     assert first.production_year > 1990
     assert first.canonical_url.startswith("https://www.polovniautomobili.com/auto-oglasi/")
     # fuel/transmission/body normalized to the mapper's canonical vocabulary, not raw Serbian text
-    assert all(x.fuel_type in {"diesel", "petrol", "hybrid", "electric", "lpg", "cng", None} for x in listings)
+    assert all(
+        x.fuel_type
+        in {
+            "diesel",
+            "petrol",
+            "hybrid",
+            "hybrid_petrol",
+            "hybrid_diesel",
+            "plugin_hybrid",
+            "electric",
+            "lpg",
+            "cng",
+            None,
+        }
+        for x in listings
+    )
     assert all(x.transmission in {"automatic", "manual", None} for x in listings)
     assert first.image_url and first.image_url.startswith("https://cdn.polovniautomobili.com/")
+    # seats is reliably present on every search-result entry (unlike interior_material/
+    # air_condition — see mapper.py's docstring), so it's extracted here directly.
+    assert first.seats == "5"
+    assert all(x.seats is None or re.fullmatch(r"\d+", x.seats) for x in listings)
 
 
 def test_parse_listing_extracts_full_detail():
@@ -67,6 +86,7 @@ def test_parse_listing_extracts_full_detail():
     assert listing.make == "Škoda"
     assert listing.model == "Octavia"
     assert listing.fuel_type == "diesel"
+    assert listing.drive_type == "front"
     assert listing.engine_volume_cc == 1968
     assert listing.mileage_km == 114_000
     assert listing.canonical_url == (
@@ -81,6 +101,15 @@ def test_parse_listing_extracts_full_detail():
     assert "apple_carplay" in listing.equipment
     assert "adaptive_cruise_control" in listing.equipment
     assert all(re.fullmatch(r"[a-z0-9_]+", item) for item in listing.equipment)  # nothing left untranslated
+    # interior_material is translated too (see mapper._INTERIOR_MATERIAL_NORMALIZED) — this
+    # fixture's raw productData.interiorMaterial is "Štof"
+    assert listing.interior_material == "cloth"
+    # air_condition is translated too (see mapper._AIR_CONDITION_NORMALIZED) — this fixture's raw
+    # productData.airCondition is "Automatska klima"
+    assert listing.air_condition == "automatic"
+    # seats is parsed from the same "N sedišta" display string as the search page (raw
+    # productData.seats is "5 sedišta")
+    assert listing.seats == "5"
 
 
 def test_parse_search_page_drops_entries_missing_a_required_field():
@@ -127,6 +156,29 @@ def test_parse_search_page_does_not_include_equipment():
 
     # The search/results page JSON simply doesn't carry `equipment` — see mapper.py's docstring.
     assert all(listing.equipment == [] for listing in listings)
+
+
+def test_parse_search_page_does_not_include_interior_material():
+    html = (FIXTURES / "search_page_01.html").read_text(encoding="utf-8")
+    adapter = PolovniAutomobiliSource()
+
+    listings, _ = adapter.parse_search_page(html)
+
+    # map_search_result doesn't read `interiorMaterial` — the search/results page only ever
+    # carries it (as a prefixed display string, not the clean value) inside a premium listing's
+    # `featuredInfo`, not as a plain per-listing field like fuel/chassis/gearBox. See mapper.py.
+    assert all(listing.interior_material is None for listing in listings)
+
+
+def test_parse_search_page_does_not_include_air_condition():
+    html = (FIXTURES / "search_page_01.html").read_text(encoding="utf-8")
+    adapter = PolovniAutomobiliSource()
+
+    listings, _ = adapter.parse_search_page(html)
+
+    # map_search_result doesn't read `airCondition` — the search/results page doesn't carry it at
+    # all, not even unreliably (unlike interior_material). See mapper.py.
+    assert all(listing.air_condition is None for listing in listings)
 
 
 def test_fetcher_is_configured_from_settings():
@@ -193,6 +245,26 @@ def test_build_search_url_uses_camel_case_for_every_range_filter():
         "power_from", "power_to",
     ):
         assert unexpected not in url
+
+
+def test_build_search_url_maps_fuel_types_to_site_codes():
+    """The site splits "hybrid" into several distinct facets (see mapper.py's
+    _FUEL_TYPE_NORMALIZED) — a plain "Hibridni pogon" tag (legacy numeric code 2308) is a much
+    smaller, separate category from "Hibridni pogon (benzin)"/"(dizel)"/"Plug-in hibrid" (the
+    site's own camelCase facet values, no legacy numeric code). Each normalized fuel_types entry
+    must round-trip to the right fuel[] value, not just the generic one.
+    """
+    from app.search.query import SearchQuery
+
+    adapter = PolovniAutomobiliSource()
+    url = adapter.build_search_url(
+        SearchQuery(fuel_types=["hybrid", "hybrid_petrol", "hybrid_diesel", "plugin_hybrid"])
+    )
+
+    assert "fuel%5B%5D=2308" in url
+    assert "fuel%5B%5D=hybridGasoline" in url
+    assert "fuel%5B%5D=hybridDiesel" in url
+    assert "fuel%5B%5D=plugInHybrid" in url
 
 
 async def test_fetch_direct_success_never_touches_proxy(monkeypatch):

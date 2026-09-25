@@ -26,10 +26,50 @@ BASE_URL = "https://www.polovniautomobili.com"
 _FUEL_TYPE_NORMALIZED = {
     "Benzin": "petrol",
     "Hibridni pogon": "hybrid",
+    "Hibridni pogon (benzin)": "hybrid_petrol",
+    "Hibridni pogon (dizel)": "hybrid_diesel",
+    "Plug-in hibrid": "plugin_hybrid",
     "Dizel": "diesel",
     "Benzin + Gas (TNG)": "lpg",
     "Električni pogon": "electric",
     "Benzin + Metan (CNG)": "cng",
+}
+
+# Keys are the raw Serbian values from `productData.interiorMaterial` (detail page only — like
+# `equipment`, the search-results page doesn't reliably carry this field; see map_product_data
+# and app/scraping/pipeline.py's `_enrich_with_detail`). Matches the site's own facet values
+# (cloth/leather/combinedLeather/velor/other), confirmed against tests/fixtures/polovniautomobili/
+# search_page_01.html's interiorMaterial filter definition.
+_INTERIOR_MATERIAL_NORMALIZED = {
+    "Štof": "cloth",
+    "Prirodna koža": "leather",
+    "Kombinovana koža": "combined_leather",
+    "Velur": "velour",
+    "Drugi": "other",
+}
+
+# Keys are the raw Serbian values from `productData.airCondition` (detail page only — like
+# `interiorMaterial`, the search-results page doesn't carry this field at all, not even
+# unreliably; see map_product_data and app/scraping/pipeline.py's `_enrich_with_detail`). Matches
+# the site's own facet values, confirmed against tests/fixtures/polovniautomobili/
+# search_page_01.html's airCondition filter definition.
+_AIR_CONDITION_NORMALIZED = {
+    "Nema klimu": "none",
+    "Manuelna klima": "manual",
+    "Automatska klima": "automatic",
+}
+
+# Keys are the raw Serbian values from `productData.drive` (detail page only — like
+# `interiorMaterial`/`airCondition`, the search-results page doesn't reliably carry this field;
+# see map_product_data and app/scraping/pipeline.py's `_enrich_with_detail`). Matches the site's
+# own facet values (front/rear/4x4/4x4Reducer), confirmed against
+# tests/fixtures/polovniautomobili/search_page_01.html's drive filter definition and by applying
+# each as ?drive[]=<value> live on the site (2026-09-18).
+_DRIVE_TYPE_NORMALIZED = {
+    "Prednji": "front",
+    "Zadnji": "rear",
+    "4x4": "awd",
+    "4x4 reduktor": "awd_low_range",
 }
 
 _BODY_TYPE_NORMALIZED = {
@@ -172,6 +212,36 @@ def normalize_body_type(raw: str | None) -> str | None:
     return _BODY_TYPE_NORMALIZED.get(raw, raw)
 
 
+def normalize_interior_material(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    return _INTERIOR_MATERIAL_NORMALIZED.get(raw, raw)
+
+
+def normalize_air_condition(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    return _AIR_CONDITION_NORMALIZED.get(raw, raw)
+
+
+def normalize_drive_type(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    return _DRIVE_TYPE_NORMALIZED.get(raw, raw)
+
+
+def normalize_seats(raw: str | None) -> str | None:
+    """`raw` is a Serbian display string like "5 sedišta" (both `productData.seats` on the detail
+    page and `seats` on each search-result entry use this same format) — pull out just the count,
+    matching the site's own facet values (`{"value":"5","text":"5 sedišta"}` in
+    tests/fixtures/polovniautomobili/search_page_01.html).
+    """
+    if not raw:
+        return None
+    match = re.match(r"\d+", raw)
+    return match.group() if match else raw
+
+
 def normalize_equipment(raw: list[str] | None) -> list[str]:
     if not raw:
         return []
@@ -219,6 +289,7 @@ def map_search_result(raw: dict) -> SourceListing:
         body_type=normalize_body_type(raw.get("chassis")),
         engine_volume_cc=raw.get("engineVolume"),
         power_hp=raw.get("horsePower"),
+        seats=normalize_seats(raw.get("seats")),
         location=raw.get("city"),
         seller_type="dealer" if raw.get("dealer") else "private",
         image_url=raw.get("imageMain"),
@@ -253,9 +324,13 @@ def map_product_data(raw: dict, canonical_path: str | None = None) -> SourceList
         body_type=normalize_body_type(raw.get("chassis")),
         engine_volume_cc=raw.get("engineVolume"),
         power_hp=raw.get("horsePower"),
+        seats=normalize_seats(raw.get("seats")),
         location=raw.get("owner", {}).get("city"),
         seller_type="dealer" if "ROLE_DEALER" in raw.get("owner", {}).get("roles", []) else "private",
         image_url=_primary_image_url(raw.get("images")),
         equipment=normalize_equipment(raw.get("equipment")),
+        interior_material=normalize_interior_material(raw.get("interiorMaterial")),
+        air_condition=normalize_air_condition(raw.get("airCondition")),
+        drive_type=normalize_drive_type(raw.get("drive")),
         raw=raw,
     )

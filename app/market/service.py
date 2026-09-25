@@ -1,106 +1,141 @@
-from datetime import date, timedelta
+"""Orchestrates market price computation and lookup. Computation (recompute_segment/recompute_due)
+runs from the batch cron job (app/scraping/scheduler.py::recompute_dirty_market_segments); lookups
+(get_market_comparison/get_price_score(s)) run on API read paths and never compute synchronously —
+see app/market/__init__.py for the overall flow.
+"""
 
-from sqlalchemy import func, select
+import uuid
+from datetime import datetime, timezone
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.market.removal_stats import DAILY_SERIES_DAYS
-from app.market.schemas import (
-    PERIOD_DAYS,
-    Period,
-    RemovalBreakdownRow,
-    RemovalMetrics,
-    RemovalSeriesPoint,
-    RemovalStatsResponse,
-)
-from app.models.removal_stats import ALL_SCOPE, RemovalStats
-
-BREAKDOWN_LIMIT = 10
+from app.market.confidence import ALGORITHM_VERSION, score_confidence
+from app.market.config import get_market_config
+from app.market.pricing import score_listing
+from app.market.repository import MarketRepository
+from app.market.schemas import MarketComparisonOut, MarketEstimateOut, PriceScoreOut
+from app.market.segment import SegmentCriteria, segment_criteria_for_listing, segment_criteria_from_row
+from app.market.stats import robust_estimate
+from app.models.listing import Listing
+from app.models.market import MarketConfidence, MarketConfig, MarketPriceSnapshot
 
 
-def _metrics(row: RemovalStats) -> RemovalMetrics:
-    return RemovalMetrics(
-        removed_count=row.removed_count,
-        median_days_on_market=row.median_days_on_market,
-        median_price_at_removal=row.median_price_at_removal,
-        price_cut_share=row.price_cut_share,
-        median_price_cut_pct=row.median_price_cut_pct,
-    )
-
-
-class RemovalStatsService:
-    """Reads the precomputed `removal_stats` rows — never touches Listing."""
-
+class MarketPriceService:
     def __init__(self, session: AsyncSession):
         self.session = session
+        self.repository = MarketRepository(session)
 
-    async def get(self, period: Period, make: str | None) -> RemovalStatsResponse:
-        period_days = PERIOD_DAYS[period]
-        make = make or None
-        make_scope = make or ALL_SCOPE
-
-        as_of = await self.session.scalar(
-            select(func.max(RemovalStats.stat_date)).where(RemovalStats.period_days == period_days)
+    async def recompute_segment(self, criteria: SegmentCriteria, config: MarketConfig) -> MarketPriceSnapshot:
+        listings = await self.repository.get_active_listings_for_segment(
+            criteria, mileage_bucket_km=config.mileage_bucket_km
         )
-        if as_of is None:
-            return RemovalStatsResponse(period=period, make=make)
+        prices = [listing.price for listing in listings]
+        estimate = robust_estimate(
+            prices, iqr_multiplier=config.outlier_iqr_multiplier, min_sample_size=config.min_sample_size
+        )
+        confidence = score_confidence(
+            estimate,
+            confidence_medium_min_sample=config.confidence_medium_min_sample,
+            confidence_high_min_sample=config.confidence_high_min_sample,
+            high_dispersion_ratio=config.confidence_high_dispersion_ratio,
+        )
+        snapshot = MarketPriceSnapshot(
+            segment_key=criteria.key(),
+            **criteria.as_columns(),
+            computed_at=datetime.now(timezone.utc),
+            algorithm_version=ALGORITHM_VERSION,
+            sample_size=estimate.sample_size,
+            filtered_sample_size=estimate.filtered_sample_size,
+            estimated_price=estimate.estimated_price,
+            price_low=estimate.price_low,
+            price_high=estimate.price_high,
+            confidence=confidence,
+        )
+        await self.repository.write_snapshot(snapshot)
+        return snapshot
 
-        current = await self._row(as_of, period_days, make_scope, ALL_SCOPE)
-        previous = await self._row(as_of - timedelta(days=period_days), period_days, make_scope, ALL_SCOPE)
-        overall = current if make is None else await self._row(as_of, period_days, ALL_SCOPE, ALL_SCOPE)
+    async def recompute_due(self, batch_size: int) -> int:
+        """Called from the cron job — one commit per batch, not per segment, so a mid-batch
+        failure doesn't leave earlier segments in this batch half-written (arq retries the whole
+        job on an unhandled exception, and a partial commit would make that retry redo work that
+        already landed).
+        """
+        config = await get_market_config(self.session)
+        dirty = await self.repository.pop_due_dirty(batch_size)
+        for row in dirty:
+            await self.recompute_segment(segment_criteria_from_row(row), config)
+        return len(dirty)
 
-        return RemovalStatsResponse(
-            period=period,
-            make=make,
-            as_of=as_of,
-            computed_at=overall.computed_at if overall else None,
-            current=_metrics(current) if current else RemovalMetrics(removed_count=0),
-            previous=_metrics(previous) if previous else None,
-            series=await self._series(make_scope),
-            breakdown=await self._breakdown(as_of, period_days, make),
+    async def get_market_comparison(self, listing: Listing) -> MarketComparisonOut:
+        config = await get_market_config(self.session)
+        criteria = segment_criteria_for_listing(listing, mileage_bucket_km=config.mileage_bucket_km)
+        snapshot = await self.repository.get_latest_snapshot(criteria.key())
+        if snapshot is None:
+            return MarketComparisonOut(market=None, price_score=None)
+
+        market = MarketEstimateOut(
+            estimated_price=snapshot.estimated_price,
+            currency=snapshot.currency,
+            price_low=snapshot.price_low,
+            price_high=snapshot.price_high,
+            confidence=snapshot.confidence,
+            comparable_listings_count=snapshot.sample_size,
+            computed_at=snapshot.computed_at,
+            algorithm_version=snapshot.algorithm_version,
         )
 
-    async def _row(self, stat_date: date, period_days: int, make: str, model: str) -> RemovalStats | None:
-        return await self.session.scalar(
-            select(RemovalStats).where(
-                RemovalStats.stat_date == stat_date,
-                RemovalStats.period_days == period_days,
-                RemovalStats.make == make,
-                RemovalStats.model == model,
+        price_score_out = None
+        if snapshot.confidence != MarketConfidence.INSUFFICIENT:
+            weights = await self.repository.get_equipment_weights()
+            score = score_listing(
+                listing.price,
+                listing.equipment,
+                snapshot,
+                weights,
+                max_equipment_adjustment_pct=config.max_equipment_adjustment_pct,
+                deviation_market_band_pct=config.deviation_market_band_pct,
+                deviation_significant_band_pct=config.deviation_significant_band_pct,
             )
-        )
-
-    async def _series(self, make: str) -> list[RemovalSeriesPoint]:
-        last_day = await self.session.scalar(select(func.max(RemovalStats.stat_date)).where(RemovalStats.period_days == 1))
-        if last_day is None:
-            return []
-        first_day = last_day - timedelta(days=DAILY_SERIES_DAYS - 1)
-        result = await self.session.execute(
-            select(RemovalStats.stat_date, RemovalStats.removed_count).where(
-                RemovalStats.period_days == 1,
-                RemovalStats.make == make,
-                RemovalStats.model == ALL_SCOPE,
-                RemovalStats.stat_date >= first_day,
+            price_score_out = PriceScoreOut(
+                price_ratio=score.price_ratio, deviation_pct=score.deviation_pct, label=score.label
             )
-        )
-        counts = {stat_date: count for stat_date, count in result.all()}
-        return [
-            RemovalSeriesPoint(date=day, removed_count=counts.get(day, 0))
-            for day in (first_day + timedelta(days=i) for i in range(DAILY_SERIES_DAYS))
-        ]
 
-    async def _breakdown(self, as_of: date, period_days: int, make: str | None) -> list[RemovalBreakdownRow]:
-        stmt = select(RemovalStats).where(RemovalStats.stat_date == as_of, RemovalStats.period_days == period_days)
-        if make:
-            stmt = stmt.where(RemovalStats.make == make, RemovalStats.model != ALL_SCOPE)
-        else:
-            stmt = stmt.where(RemovalStats.make != ALL_SCOPE, RemovalStats.model == ALL_SCOPE)
-        rows = (
-            await self.session.scalars(
-                stmt.order_by(RemovalStats.removed_count.desc(), RemovalStats.make, RemovalStats.model).limit(
-                    BREAKDOWN_LIMIT
-                )
+        return MarketComparisonOut(market=market, price_score=price_score_out)
+
+    async def get_price_score(self, listing: Listing) -> PriceScoreOut | None:
+        scores = await self.get_price_scores([listing])
+        return scores.get(listing.id)
+
+    async def get_price_scores(self, listings: list[Listing]) -> dict[uuid.UUID, PriceScoreOut]:
+        """Batched — one snapshot query for the whole page instead of N+1. Used by
+        app/search/service.py's flat (ungrouped) results and app/api/v1/listings.py's
+        `_to_listing_out`.
+        """
+        if not listings:
+            return {}
+        config = await get_market_config(self.session)
+        segment_key_by_listing_id = {
+            listing.id: segment_criteria_for_listing(listing, mileage_bucket_km=config.mileage_bucket_km).key()
+            for listing in listings
+        }
+        snapshots = await self.repository.get_latest_snapshots(list(set(segment_key_by_listing_id.values())))
+        weights = await self.repository.get_equipment_weights()
+
+        result: dict[uuid.UUID, PriceScoreOut] = {}
+        for listing in listings:
+            snapshot = snapshots.get(segment_key_by_listing_id[listing.id])
+            if snapshot is None or snapshot.confidence == MarketConfidence.INSUFFICIENT:
+                continue
+            score = score_listing(
+                listing.price,
+                listing.equipment,
+                snapshot,
+                weights,
+                max_equipment_adjustment_pct=config.max_equipment_adjustment_pct,
+                deviation_market_band_pct=config.deviation_market_band_pct,
+                deviation_significant_band_pct=config.deviation_significant_band_pct,
             )
-        ).all()
-        return [
-            RemovalBreakdownRow(make=row.make, model=row.model or None, **_metrics(row).model_dump()) for row in rows
-        ]
+            result[listing.id] = PriceScoreOut(
+                price_ratio=score.price_ratio, deviation_pct=score.deviation_pct, label=score.label
+            )
+        return result

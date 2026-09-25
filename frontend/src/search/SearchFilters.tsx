@@ -1,6 +1,14 @@
 import type { SearchQuery } from '../lib/search'
 import { useVehicleMakes } from './useVehicleMakes'
-import { BODY_TYPE_OPTIONS, FUEL_TYPE_OPTIONS, TRANSMISSION_OPTIONS } from './constants'
+import {
+  AIR_CONDITION_OPTIONS,
+  BODY_TYPE_OPTIONS,
+  DRIVE_TYPE_OPTIONS,
+  FUEL_TYPE_OPTIONS,
+  INTERIOR_MATERIAL_OPTIONS,
+  SEATS_OPTIONS,
+  TRANSMISSION_OPTIONS,
+} from './constants'
 import { EquipmentFilter } from './EquipmentFilter'
 
 const inputClass =
@@ -209,6 +217,30 @@ export function SearchFilters({
           options={BODY_TYPE_OPTIONS}
           selected={value.body_types}
           onChange={(v) => onChange({ ...value, body_types: v })}
+        />
+        <CheckboxGroup
+          label="Материал салона"
+          options={INTERIOR_MATERIAL_OPTIONS}
+          selected={value.interior_materials}
+          onChange={(v) => onChange({ ...value, interior_materials: v })}
+        />
+        <CheckboxGroup
+          label="Кондиционер"
+          options={AIR_CONDITION_OPTIONS}
+          selected={value.air_conditions}
+          onChange={(v) => onChange({ ...value, air_conditions: v })}
+        />
+        <CheckboxGroup
+          label="Привод"
+          options={DRIVE_TYPE_OPTIONS}
+          selected={value.drive_types}
+          onChange={(v) => onChange({ ...value, drive_types: v })}
+        />
+        <CheckboxGroup
+          label="Количество мест"
+          options={SEATS_OPTIONS}
+          selected={value.seats}
+          onChange={(v) => onChange({ ...value, seats: v })}
         />
       </div>
 

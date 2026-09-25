@@ -17,6 +17,10 @@ export interface SearchQuery {
   fuel_types?: string[]
   transmissions?: string[]
   body_types?: string[]
+  interior_materials?: string[]
+  air_conditions?: string[]
+  drive_types?: string[]
+  seats?: string[]
   equipment?: string[]
   location?: string
 }
@@ -33,7 +37,16 @@ export function describeQuery(query: SearchQuery): string {
 }
 
 // Mirrors ALLOWED_GROUP_FIELDS in app/search/service.py.
-export type GroupField = 'make' | 'model' | 'production_year' | 'fuel_type' | 'transmission' | 'engine_volume_cc' | 'body_type'
+export type GroupField =
+  | 'make'
+  | 'model'
+  | 'production_year'
+  | 'fuel_type'
+  | 'transmission'
+  | 'engine_volume_cc'
+  | 'body_type'
+  | 'interior_material'
+  | 'drive_type'
 
 export const GROUP_FIELD_LABELS: Record<GroupField, string> = {
   make: 'Марка',
@@ -43,6 +56,8 @@ export const GROUP_FIELD_LABELS: Record<GroupField, string> = {
   transmission: 'КПП',
   engine_volume_cc: 'Объём двигателя',
   body_type: 'Кузов',
+  interior_material: 'Материал салона',
+  drive_type: 'Привод',
 }
 
 // Mirrors SearchRequest.group_by's default in app/search/query.py.

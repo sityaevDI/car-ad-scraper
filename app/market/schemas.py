@@ -1,38 +1,60 @@
-from datetime import date, datetime
-from typing import Literal
+from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
-Period = Literal["day", "week", "month"]
-PERIOD_DAYS: dict[str, int] = {"day": 1, "week": 7, "month": 30}
+from app.models.market import MarketConfidence
 
 
-class RemovalMetrics(BaseModel):
-    removed_count: int
-    median_days_on_market: float | None = None
-    median_price_at_removal: int | None = None
-    # Fraction (0..1) of removed listings whose price was cut at least once before they left, and
-    # the median size of that cut in percent.
-    price_cut_share: float | None = None
-    median_price_cut_pct: float | None = None
+class PriceScoreOut(BaseModel):
+    price_ratio: float
+    deviation_pct: float
+    label: str
 
 
-class RemovalBreakdownRow(RemovalMetrics):
-    make: str
-    model: str | None = None
+class MarketEstimateOut(BaseModel):
+    estimated_price: int | None
+    currency: str
+    price_low: int | None
+    price_high: int | None
+    confidence: MarketConfidence
+    # Raw comparable-listing count in the segment before outlier filtering — "how many similar
+    # cars are out there", not the (usually smaller) count actually used for the median/range.
+    comparable_listings_count: int
+    computed_at: datetime
+    algorithm_version: str
 
 
-class RemovalSeriesPoint(BaseModel):
-    date: date
-    removed_count: int
+class MarketComparisonOut(BaseModel):
+    """GET /listings/{id}/market-comparison — docs/adr/08_API.md. `market` and `price_score` are
+    both None when no snapshot exists yet for the listing's segment (never computed synchronously
+    on this read path — see app/market/service.py).
+    """
+
+    market: MarketEstimateOut | None
+    price_score: PriceScoreOut | None
 
 
-class RemovalStatsResponse(BaseModel):
-    period: Period
-    make: str | None = None
-    as_of: date | None = None
-    computed_at: datetime | None = None
-    current: RemovalMetrics | None = None
-    previous: RemovalMetrics | None = None
-    series: list[RemovalSeriesPoint] = []
-    breakdown: list[RemovalBreakdownRow] = []
+class MarketConfigOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    min_sample_size: int
+    mileage_bucket_km: int
+    outlier_iqr_multiplier: float
+    deviation_market_band_pct: float
+    deviation_significant_band_pct: float
+    confidence_medium_min_sample: int
+    confidence_high_min_sample: int
+    confidence_high_dispersion_ratio: float
+    max_equipment_adjustment_pct: float
+
+
+class MarketConfigUpdate(BaseModel):
+    min_sample_size: int | None = Field(default=None, ge=1)
+    mileage_bucket_km: int | None = Field(default=None, ge=1)
+    outlier_iqr_multiplier: float | None = Field(default=None, ge=0)
+    deviation_market_band_pct: float | None = Field(default=None, ge=0)
+    deviation_significant_band_pct: float | None = Field(default=None, ge=0)
+    confidence_medium_min_sample: int | None = Field(default=None, ge=1)
+    confidence_high_min_sample: int | None = Field(default=None, ge=1)
+    confidence_high_dispersion_ratio: float | None = Field(default=None, ge=0)
+    max_equipment_adjustment_pct: float | None = Field(default=None, ge=0)

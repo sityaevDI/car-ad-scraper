@@ -30,6 +30,10 @@ class SearchQuery(BaseModel):
     fuel_types: list[str] | None = None
     transmissions: list[str] | None = None
     body_types: list[str] | None = None
+    interior_materials: list[str] | None = None
+    air_conditions: list[str] | None = None
+    drive_types: list[str] | None = None
+    seats: list[str] | None = None
     equipment: list[str] | None = None
     location: str | None = None
 

@@ -3,6 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
+from app.market.schemas import PriceScoreOut
 from app.models.listing import ListingStatus
 
 
@@ -23,8 +24,12 @@ class ListingOut(BaseModel):
     fuel_type: str | None
     transmission: str | None
     body_type: str | None
+    interior_material: str | None
+    air_condition: str | None
+    drive_type: str | None
     engine_volume_cc: int | None
     power_hp: int | None
+    seats: str | None
     location: str | None
     image_url: str | None
     status: ListingStatus
@@ -34,6 +39,9 @@ class ListingOut(BaseModel):
     # Set by the route for a logged-in caller (app/listings/repository.py::FollowRepository),
     # never derived from the Listing row itself.
     is_following: bool = False
+    # Set by the route via app/market/service.py::MarketPriceService — never derived from the
+    # Listing row itself. None when no market snapshot exists yet for this listing's segment.
+    price_score: PriceScoreOut | None = None
 
 
 class ListingSnapshotOut(BaseModel):

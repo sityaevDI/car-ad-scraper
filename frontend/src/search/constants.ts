@@ -4,6 +4,9 @@ export const FUEL_TYPE_OPTIONS = [
   { value: 'petrol', label: 'Бензин' },
   { value: 'diesel', label: 'Дизель' },
   { value: 'hybrid', label: 'Гибрид' },
+  { value: 'hybrid_petrol', label: 'Гибрид (бензин)' },
+  { value: 'hybrid_diesel', label: 'Гибрид (дизель)' },
+  { value: 'plugin_hybrid', label: 'Плагин-гибрид' },
   { value: 'electric', label: 'Электро' },
   { value: 'lpg', label: 'Газ (LPG)' },
   { value: 'cng', label: 'Газ (CNG)' },
@@ -23,6 +26,52 @@ export const BODY_TYPE_OPTIONS = [
   { value: 'convertible', label: 'Кабриолет' },
   { value: 'pickup', label: 'Пикап' },
   { value: 'minivan', label: 'Минивэн' },
+] as const
+
+// Canonical values normalized by app/sources/polovniautomobili/mapper.py's
+// _INTERIOR_MATERIAL_NORMALIZED — kept in sync manually, same as the option lists above. Only
+// populated from a listing's detail page (see that mapper's docstring), so filtering by this
+// excludes listings whose detail page hasn't been fetched/re-fetched yet.
+export const INTERIOR_MATERIAL_OPTIONS = [
+  { value: 'cloth', label: 'Ткань' },
+  { value: 'leather', label: 'Натуральная кожа' },
+  { value: 'combined_leather', label: 'Комбинированная кожа' },
+  { value: 'velour', label: 'Велюр' },
+  { value: 'other', label: 'Другое' },
+] as const
+
+// Canonical values normalized by app/sources/polovniautomobili/mapper.py's
+// _AIR_CONDITION_NORMALIZED — kept in sync manually, same as the option lists above. Only
+// populated from a listing's detail page (see that mapper's docstring), so filtering by this
+// excludes listings whose detail page hasn't been fetched/re-fetched yet.
+export const AIR_CONDITION_OPTIONS = [
+  { value: 'none', label: 'Без кондиционера' },
+  { value: 'manual', label: 'Кондиционер' },
+  { value: 'automatic', label: 'Климат-контроль' },
+] as const
+
+// Canonical values normalized by app/sources/polovniautomobili/mapper.py's
+// _DRIVE_TYPE_NORMALIZED — kept in sync manually, same as the option lists above. Only populated
+// from a listing's detail page (see that mapper's docstring), so filtering by this excludes
+// listings whose detail page hasn't been fetched/re-fetched yet.
+export const DRIVE_TYPE_OPTIONS = [
+  { value: 'front', label: 'Передний привод' },
+  { value: 'rear', label: 'Задний привод' },
+  { value: 'awd', label: 'Полный привод' },
+  { value: 'awd_low_range', label: 'Полный привод (с редуктором)' },
+] as const
+
+// Canonical values are the raw seat count as a string (see mapper.py's normalize_seats) — kept
+// in sync manually with the site's own "seats" facet (2-9).
+export const SEATS_OPTIONS = [
+  { value: '2', label: '2 места' },
+  { value: '3', label: '3 места' },
+  { value: '4', label: '4 места' },
+  { value: '5', label: '5 мест' },
+  { value: '6', label: '6 мест' },
+  { value: '7', label: '7 мест' },
+  { value: '8', label: '8 мест' },
+  { value: '9', label: '9 мест' },
 ] as const
 
 // Canonical values normalized by app/sources/polovniautomobili/mapper.py's

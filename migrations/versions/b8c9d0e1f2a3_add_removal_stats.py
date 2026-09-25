@@ -1,7 +1,7 @@
 """add removal_stats
 
 Revision ID: b8c9d0e1f2a3
-Revises: c4d5e6f7a8b9
+Revises: a7b28c511ac5
 Create Date: 2026-09-25 00:00:00.000000
 
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'b8c9d0e1f2a3'
-down_revision: Union[str, Sequence[str], None] = 'c4d5e6f7a8b9'
+down_revision: Union[str, Sequence[str], None] = 'a7b28c511ac5'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

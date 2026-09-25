@@ -45,11 +45,17 @@ class ListingRepository:
         )
         return result.scalar_one_or_none()
 
-    async def upsert_listing(self, source_id: uuid.UUID, data: SourceListing) -> tuple[Listing, bool, int | None]:
+    async def upsert_listing(
+        self, source_id: uuid.UUID, data: SourceListing
+    ) -> tuple[Listing, bool, bool, int | None]:
         """Insert a new Listing + its first Snapshot, or refresh an existing one and append a new
-        Snapshot only if price/mileage/title actually changed. Returns (listing, is_new,
-        previous_price) — previous_price is the price before this update, only set when the price
-        actually changed (used by app/notifications/matching.py to detect drops for #21/#26).
+        Snapshot only if price/mileage/title actually changed. Returns (listing, is_new, changed,
+        previous_price) — `changed` is False for an existing listing that was merely re-seen this
+        crawl with identical data (always True for a new listing); previous_price is the price
+        before this update, only set when the price actually changed (used by
+        app/notifications/matching.py to detect drops for #21/#26). `changed` itself is used by
+        app/scraping/pipeline.py to keep ScrapeStats.listings_updated meaning "genuinely changed",
+        not "re-encountered" (see that module's SAVED_SEARCH_REFRESH re-crawl comment).
 
         The insert is attempted inside a SAVEPOINT so a concurrent scrape of the same source
         racing us to create the same (source_id, external_id) row only aborts that SAVEPOINT,
@@ -76,6 +82,7 @@ class ListingRepository:
                 body_type=data.body_type,
                 engine_volume_cc=data.engine_volume_cc,
                 power_hp=data.power_hp,
+                seats=data.seats,
                 location=data.location,
                 seller_type=data.seller_type,
                 image_url=data.image_url,
@@ -95,13 +102,13 @@ class ListingRepository:
                     raise
             else:
                 self._add_snapshot(listing, data, now)
-                return listing, True, None
+                return listing, True, True, None
 
         return self._apply_update(existing, data, now)
 
     def _apply_update(
         self, existing: Listing, data: SourceListing, now: datetime
-    ) -> tuple[Listing, bool, int | None]:
+    ) -> tuple[Listing, bool, bool, int | None]:
         existing.last_seen_at = now
         existing.last_checked_at = now
         existing.status = ListingStatus.ACTIVE
@@ -121,7 +128,7 @@ class ListingRepository:
             existing.title = data.title
             self._add_snapshot(existing, data, now)
 
-        return existing, False, previous_price
+        return existing, False, changed, previous_price
 
     def set_equipment(self, listing: Listing, equipment: list[str]) -> None:
         """Called once, right after a new listing is created, with equipment parsed from its
@@ -129,23 +136,55 @@ class ListingRepository:
         """
         listing.equipment = equipment
 
-    async def mark_missing_as_removed(self, source_id: uuid.UUID, seen_external_ids: set[str]) -> int:
+    def set_interior_material(self, listing: Listing, interior_material: str | None) -> None:
+        """Same one-time detail-page backfill as set_equipment, for the same reason (search-page
+        results don't reliably carry it) — see app/scraping/pipeline.py's `_enrich_with_detail`.
+        """
+        listing.interior_material = interior_material
+
+    def set_air_condition(self, listing: Listing, air_condition: str | None) -> None:
+        """Same one-time detail-page backfill as set_interior_material — search-page results don't
+        carry `airCondition` at all — see app/scraping/pipeline.py's `_enrich_with_detail`.
+        """
+        listing.air_condition = air_condition
+
+    def set_drive_type(self, listing: Listing, drive_type: str | None) -> None:
+        """Same one-time detail-page backfill as set_air_condition — search-page results don't
+        reliably carry `drive` — see app/scraping/pipeline.py's `_enrich_with_detail`.
+        """
+        listing.drive_type = drive_type
+
+    async def mark_missing_as_removed(self, source_id: uuid.UUID, seen_external_ids: set[str]) -> list[Listing]:
         """Mark active listings for a source that were not encountered in the latest crawl as
         removed. Never deletes rows — see docs/adr/17_AGENT_INSTRUCTIONS.md.
 
         Only correct for a full-source crawl — called from `run_scrape` (app/scraping/pipeline.py)
         for FULL_SOURCE_REFRESH jobs only, since a filtered SearchQuery would make every listing
         outside that filter look "missing" and get wrongly marked removed.
+
+        Returns the listings just marked removed (not just a count) — the caller uses them to mark
+        their market segments dirty (a removal changes that segment's comparable sample).
+
+        Streams instead of `.scalars().all()`-ing every active listing for the source at once — on
+        a FULL_SOURCE_REFRESH that's effectively the whole table (tens of thousands of rows for
+        this source), which .all() would hold as live ORM objects in the session's identity map
+        for as long as the caller keeps the session open (see 2026-09-18 backend memory
+        investigation). A listing that's still active gets expunged immediately after the check —
+        it's untouched, so there's nothing pending to lose — while a listing this call actually
+        marks removed stays attached (the caller reads it right after, and it's a small subset of
+        the total).
         """
-        result = await self.session.execute(
+        result = await self.session.stream_scalars(
             select(Listing).where(Listing.source_id == source_id, Listing.status == ListingStatus.ACTIVE)
         )
-        count = 0
-        for listing in result.scalars().all():
+        removed = []
+        async for listing in result:
             if listing.external_id not in seen_external_ids:
                 listing.status = ListingStatus.REMOVED
-                count += 1
-        return count
+                removed.append(listing)
+            else:
+                self.session.expunge(listing)
+        return removed
 
     def _add_snapshot(self, listing: Listing, data: SourceListing, captured_at: datetime) -> None:
         self.session.add(

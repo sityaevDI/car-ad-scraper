@@ -1,4 +1,4 @@
-import type { NotificationOut } from '../lib/notifications'
+import type { NewMatchListingPreview, NotificationOut } from '../lib/notifications'
 
 const TYPE_LABELS: Record<NotificationOut['type'], string> = {
   new_match: 'Новые объявления',
@@ -21,6 +21,63 @@ export function notificationTitle(notification: NotificationOut): string {
     return name ? `«${name}»` : TYPE_LABELS.new_match
   }
   return TYPE_LABELS[notification.type] ?? notification.type
+}
+
+export type NotificationDateBucket = 'today' | 'yesterday' | 'week' | 'earlier'
+
+const BUCKET_LABELS: Record<NotificationDateBucket, string> = {
+  today: 'Сегодня',
+  yesterday: 'Вчера',
+  week: 'На этой неделе',
+  earlier: 'Ранее',
+}
+
+function notificationDateBucket(createdAt: string): NotificationDateBucket {
+  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+  const daysAgo = Math.floor((startOfDay(new Date()) - startOfDay(new Date(createdAt))) / 86_400_000)
+  if (daysAgo <= 0) return 'today'
+  if (daysAgo === 1) return 'yesterday'
+  if (daysAgo <= 7) return 'week'
+  return 'earlier'
+}
+
+// Groups an already created_at-desc-sorted list into date buckets for the notifications page,
+// preserving each bucket's relative order.
+export function groupNotificationsByDate<T extends { created_at: string }>(
+  notifications: T[],
+): { label: string; items: T[] }[] {
+  const buckets = new Map<NotificationDateBucket, T[]>()
+  for (const notification of notifications) {
+    const bucket = notificationDateBucket(notification.created_at)
+    const items = buckets.get(bucket)
+    if (items) items.push(notification)
+    else buckets.set(bucket, [notification])
+  }
+  return (['today', 'yesterday', 'week', 'earlier'] as const)
+    .filter((bucket) => buckets.has(bucket))
+    .map((bucket) => ({ label: BUCKET_LABELS[bucket], items: buckets.get(bucket)! }))
+}
+
+function isNewMatchListingPreview(value: unknown): value is NewMatchListingPreview {
+  if (!value || typeof value !== 'object') return false
+  const v = value as Record<string, unknown>
+  return typeof v.id === 'string' && typeof v.title === 'string' && typeof v.price === 'number'
+}
+
+// The specific new listings behind a NEW_MATCH notification's count, so a saved search matching
+// several listings at once shows *which* ones — a bare "N новых" count doesn't say what changed.
+// Capped server-side (app/notifications/matching.py::_NEW_LISTINGS_PREVIEW_LIMIT); the remainder
+// beyond this list is only reflected in payload.new_listings_count.
+export function notificationNewListingsPreview(notification: NotificationOut): NewMatchListingPreview[] {
+  if (notification.type !== 'new_match') return []
+  const raw = notification.payload?.new_listings
+  if (!Array.isArray(raw)) return []
+  return raw.filter(isNewMatchListingPreview)
+}
+
+export function notificationNewListingsCount(notification: NotificationOut): number {
+  const count = notification.payload?.new_listings_count
+  return typeof count === 'number' ? count : 0
 }
 
 export function notificationDescription(notification: NotificationOut): string {

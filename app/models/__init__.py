@@ -2,6 +2,13 @@
 
 from app.models.follow import Follow
 from app.models.listing import Listing, ListingStatus
+from app.models.market import (
+    MarketConfidence,
+    MarketConfig,
+    MarketDirtySegment,
+    MarketEquipmentWeight,
+    MarketPriceSnapshot,
+)
 from app.models.notification import Notification, NotificationType
 from app.models.removal_stats import RemovalStats
 from app.models.saved_search import SavedSearch
@@ -33,4 +40,9 @@ __all__ = [
     "NotificationType",
     "SubscriptionPlan",
     "UserSubscription",
+    "MarketPriceSnapshot",
+    "MarketDirtySegment",
+    "MarketConfig",
+    "MarketEquipmentWeight",
+    "MarketConfidence",
 ]

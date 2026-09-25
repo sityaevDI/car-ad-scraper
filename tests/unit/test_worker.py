@@ -83,6 +83,31 @@ async def test_run_scrape_job_marks_completed_on_success(worker_session_factory,
         assert job.finished_at is not None
 
 
+async def test_run_scrape_job_marks_completed_when_run_scrape_expunged_the_session(worker_session_factory, monkeypatch):
+    """Reproduces a 2026-09-20 production incident: a real crawl calls session.expunge_all()
+    partway through (app/scraping/pipeline.py, to release memory on a long run), which detaches
+    every object the session was holding — `job` included. Without reloading `job` before the
+    final status update, mutating it is a no-op nothing ever flushes, and the row is abandoned at
+    RUNNING forever even though run_scrape_job itself returns cleanly (no exception at all).
+    """
+    job_id = await _seed_job(worker_session_factory)
+
+    async def fake_run_scrape(session, source_code, query, max_pages=5, proxy_provider=None, mark_removed=False):
+        session.expunge_all()
+        return ScrapeStats(listings_seen=1000, listings_created=1000, outcome_counts={"success": 1000})
+
+    monkeypatch.setattr(worker_module, "run_scrape", fake_run_scrape)
+
+    ctx = {"session_factory": worker_session_factory, "proxy_provider": NullProxyProvider()}
+    await worker_module.run_scrape_job(ctx, str(job_id))
+
+    async with worker_session_factory() as session:
+        job = await session.get(ScrapeJob, job_id)
+        assert job.status == ScrapeJobStatus.COMPLETED
+        assert job.finished_at is not None
+        assert job.stats["listings_seen"] == 1000
+
+
 async def test_run_scrape_job_fails_fast_when_another_job_for_the_source_is_already_running(
     worker_session_factory, monkeypatch
 ):
@@ -145,6 +170,31 @@ async def test_run_scrape_job_marks_failed_on_exception(worker_session_factory, 
         job = await session.get(ScrapeJob, job_id)
         assert job.status == ScrapeJobStatus.FAILED
         assert job.error == {"type": "RuntimeError", "message": "boom"}
+
+
+async def test_run_scrape_job_marks_failed_when_run_scrape_expunged_the_session_then_failed(
+    worker_session_factory, monkeypatch
+):
+    """Same expunge-then-detached-`job` hazard as the success-path test above, but on the
+    exception branch: a crawl that has already released memory via session.expunge_all() before
+    it fails must still reload `job` before recording FAILED, or that write is silently lost too.
+    """
+    job_id = await _seed_job(worker_session_factory)
+
+    async def fake_run_scrape(session, source_code, query, max_pages=5, proxy_provider=None, mark_removed=False):
+        session.expunge_all()
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(worker_module, "run_scrape", fake_run_scrape)
+
+    ctx = {"session_factory": worker_session_factory, "proxy_provider": NullProxyProvider()}
+    with pytest.raises(RuntimeError):
+        await worker_module.run_scrape_job(ctx, str(job_id))
+
+    async with worker_session_factory() as session:
+        job = await session.get(ScrapeJob, job_id)
+        assert job.status == ScrapeJobStatus.FAILED
+        assert job.finished_at is not None
 
 
 async def test_run_scrape_job_marks_failed_when_session_needs_rollback(worker_session_factory, monkeypatch):
