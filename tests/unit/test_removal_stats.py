@@ -205,3 +205,13 @@ async def test_cron_is_registered_in_worker():
 
     names = {job.name for job in WorkerSettings.cron_jobs}
     assert "cron:run_refresh_removal_stats" in names
+
+
+async def test_cli_refresh_reports_written_rows(session, capsys):
+    from app.market.removal_cli import _refresh
+
+    await _refresh(session)
+
+    rows = await session.scalar(select(func.count()).select_from(RemovalStats))
+    assert f"Wrote {rows} removal_stats rows." in capsys.readouterr().out
+    assert rows > 0
