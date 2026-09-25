@@ -4,15 +4,12 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.pool import StaticPool
 
-from app.db.base import Base
 from app.db.session import get_session
 from app.main import app
-from app.market.removal_stats import DAILY_SERIES_DAYS, MIN_MODEL_REMOVED, refresh_removal_stats
 from app.market.removal_schemas import RemovalStatsResponse
 from app.market.removal_service import RemovalStatsService
+from app.market.removal_stats import DAILY_SERIES_DAYS, MIN_MODEL_REMOVED, refresh_removal_stats
 from app.models.listing import ListingStatus
 from app.models.removal_stats import ALL_SCOPE, RemovalStats
 from app.models.snapshot import ListingSnapshot

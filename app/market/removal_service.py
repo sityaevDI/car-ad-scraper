@@ -3,7 +3,6 @@ from datetime import date, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.market.removal_stats import DAILY_SERIES_DAYS
 from app.market.removal_schemas import (
     PERIOD_DAYS,
     Period,
@@ -12,6 +11,7 @@ from app.market.removal_schemas import (
     RemovalSeriesPoint,
     RemovalStatsResponse,
 )
+from app.market.removal_stats import DAILY_SERIES_DAYS
 from app.models.removal_stats import ALL_SCOPE, RemovalStats
 
 BREAKDOWN_LIMIT = 10
@@ -70,7 +70,9 @@ class RemovalStatsService:
         )
 
     async def _series(self, make: str) -> list[RemovalSeriesPoint]:
-        last_day = await self.session.scalar(select(func.max(RemovalStats.stat_date)).where(RemovalStats.period_days == 1))
+        last_day = await self.session.scalar(
+            select(func.max(RemovalStats.stat_date)).where(RemovalStats.period_days == 1)
+        )
         if last_day is None:
             return []
         first_day = last_day - timedelta(days=DAILY_SERIES_DAYS - 1)
