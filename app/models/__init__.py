@@ -10,6 +10,7 @@ from app.models.market import (
     MarketPriceSnapshot,
 )
 from app.models.notification import Notification, NotificationType
+from app.models.removal_stats import RemovalStats
 from app.models.saved_search import SavedSearch
 from app.models.scheduled_scrape import ScheduledScrape
 from app.models.scrape_job import ScrapeJob, ScrapeJobStatus, ScrapeJobType
@@ -28,6 +29,7 @@ __all__ = [
     "ListingSnapshot",
     "Follow",
     "User",
+    "RemovalStats",
     "SavedSearch",
     "ScheduledScrape",
     "ScrapeJob",

@@ -9,6 +9,7 @@ import { LoginPage } from './pages/LoginPage'
 import { NotificationsPage } from './pages/NotificationsPage'
 import { OpenSavedSearchPage } from './pages/OpenSavedSearchPage'
 import { RegisterPage } from './pages/RegisterPage'
+import { RemovedStatsPage } from './pages/RemovedStatsPage'
 import { ResetPasswordPage } from './pages/ResetPasswordPage'
 import { SavedSearchesPage } from './pages/SavedSearchesPage'
 import { SearchPage } from './pages/SearchPage'
@@ -19,6 +20,7 @@ export function App() {
     <Routes>
       <Route element={<Layout />}>
         <Route path="/listings/:id" element={<ListingDetailPage />} />
+        <Route path="/market/removed" element={<RemovedStatsPage />} />
         <Route element={<RequireAuth />}>
           <Route path="/" element={<SearchPage />} />
           <Route path="/saved-searches" element={<SavedSearchesPage />} />

@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1 import auth, listings, market, notifications, saved_searches, scrape, search, vehicles
+from app.api.v1 import auth, listings, market, notifications, removal_stats, saved_searches, scrape, search, vehicles
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(auth.router)
@@ -12,3 +12,4 @@ api_router.include_router(scrape.router)
 api_router.include_router(saved_searches.router)
 api_router.include_router(notifications.router)
 api_router.include_router(market.router)
+api_router.include_router(removal_stats.router)

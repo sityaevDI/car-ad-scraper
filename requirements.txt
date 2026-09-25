@@ -7,7 +7,7 @@ Brotli
 uvicorn
 
 # app/ (Postgres modular monolith)
-sqlalchemy>=2.0
+sqlalchemy>=2.0,<2.1
 alembic
 asyncpg
 psycopg2-binary

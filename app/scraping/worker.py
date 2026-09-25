@@ -17,6 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from app.auth.email import get_email_sender
 from app.config import get_settings
 from app.db.session import get_session_factory
+from app.market.removal_stats import run_refresh_removal_stats
 from app.models.scrape_job import ScrapeJob, ScrapeJobStatus, ScrapeJobType
 from app.models.source import Source
 from app.notifications.delivery import send_notification_email
@@ -191,6 +192,8 @@ class WorkerSettings:
         cron(run_due_scheduled_scrapes, second=0),
         cron(run_due_saved_search_scrapes, second=0),
         cron(recompute_dirty_market_segments, second=0),
+        # Also at startup so a fresh deploy doesn't show an empty stats page until the next slot.
+        cron(run_refresh_removal_stats, hour={3, 15}, minute=10, second=0, run_at_startup=True),
     ]
     on_startup = _on_startup
     redis_settings = RedisSettings.from_dsn(get_settings().redis_url)
