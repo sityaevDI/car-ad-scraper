@@ -1,8 +1,9 @@
 import hashlib
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -200,6 +201,16 @@ class ListingRepository:
         )
 
 
+@dataclass
+class FollowedListing:
+    follow: Follow
+    listing: Listing
+    # Price the listing had when the user started following it, derived from the append-only
+    # snapshot history (the latest snapshot at or before the follow) — not stored on `follows`,
+    # so no migration and it also works for follows created before this view existed.
+    price_at_follow: int | None
+
+
 class FollowRepository:
     """Owns Follow persistence — see issue #21. Notification generation on price drop lives in
     app/notifications/matching.py, not here.
@@ -231,3 +242,42 @@ class FollowRepository:
     async def list_followers(self, listing_id: uuid.UUID) -> list[Follow]:
         result = await self.session.execute(select(Follow).where(Follow.listing_id == listing_id))
         return list(result.scalars().all())
+
+    async def list_for_user(self, user_id: uuid.UUID, page: int, page_size: int) -> tuple[list[FollowedListing], int]:
+        """The user's followed listings, most recently followed first, plus the total count."""
+        total = (
+            await self.session.execute(select(func.count()).select_from(Follow).where(Follow.user_id == user_id))
+        ).scalar_one()
+        rows = (
+            await self.session.execute(
+                select(Follow, Listing)
+                .join(Listing, Listing.id == Follow.listing_id)
+                .where(Follow.user_id == user_id)
+                .order_by(Follow.created_at.desc(), Follow.id)
+                .offset((page - 1) * page_size)
+                .limit(page_size)
+            )
+        ).all()
+        if not rows:
+            return [], total
+
+        snapshots = (
+            await self.session.execute(
+                select(ListingSnapshot.listing_id, ListingSnapshot.captured_at, ListingSnapshot.price)
+                .where(ListingSnapshot.listing_id.in_([listing.id for _, listing in rows]))
+                .order_by(ListingSnapshot.captured_at.asc())
+            )
+        ).all()
+        history: dict[uuid.UUID, list[tuple[datetime, int]]] = {}
+        for listing_id, captured_at, price in snapshots:
+            history.setdefault(listing_id, []).append((captured_at, price))
+
+        items = []
+        for follow, listing in rows:
+            price_at_follow = None
+            for captured_at, price in history.get(listing.id, []):
+                if captured_at > follow.created_at:
+                    break
+                price_at_follow = price
+            items.append(FollowedListing(follow=follow, listing=listing, price_at_follow=price_at_follow))
+        return items, total

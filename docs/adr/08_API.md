@@ -50,6 +50,7 @@ Search response:
 
 ```text
 GET /listings
+GET /listings/following        # отслеживаемые объявления текущего пользователя (page, page_size)
 GET /listings/{id}
 GET /listings/{id}/history
 GET /listings/{id}/market-comparison

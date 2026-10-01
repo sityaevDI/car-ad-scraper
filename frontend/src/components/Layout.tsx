@@ -46,6 +46,9 @@ export function Layout() {
                 <Link to="/saved-searches" className="font-medium text-slate-700 hover:text-slate-900">
                   Мои поиски
                 </Link>
+                <Link to="/following" className="font-medium text-slate-700 hover:text-slate-900">
+                  Отслеживаемые
+                </Link>
                 <Link to="/notifications" className="relative font-medium text-slate-700 hover:text-slate-900">
                   Уведомления
                   {unreadCount > 0 && (
