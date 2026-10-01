@@ -1,12 +1,18 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, get_current_user_optional, require_csrf
 from app.db.session import get_session
 from app.listings.repository import FollowRepository, ListingRepository
-from app.listings.schemas import ListingHistoryOut, ListingOut, ListingSnapshotOut
+from app.listings.schemas import (
+    FollowedListingOut,
+    FollowedListingsOut,
+    ListingHistoryOut,
+    ListingOut,
+    ListingSnapshotOut,
+)
 from app.market.schemas import MarketComparisonOut
 from app.market.service import MarketPriceService
 from app.models.listing import Listing
@@ -21,6 +27,26 @@ async def _to_listing_out(listing: Listing, current_user: User | None, session: 
         out.is_following = await FollowRepository(session).get(current_user.id, listing.id) is not None
     out.price_score = await MarketPriceService(session).get_price_score(listing)
     return out
+
+
+# Declared before "/{listing_id}" so "following" isn't parsed as a listing id.
+@router.get("/following", response_model=FollowedListingsOut)
+async def list_followed_listings(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> FollowedListingsOut:
+    followed, total = await FollowRepository(session).list_for_user(current_user.id, page, page_size)
+    items = []
+    for entry in followed:
+        listing_out = await _to_listing_out(entry.listing, current_user, session)
+        items.append(
+            FollowedListingOut(
+                listing=listing_out, followed_at=entry.follow.created_at, price_at_follow=entry.price_at_follow
+            )
+        )
+    return FollowedListingsOut(items=items, total=total, page=page, page_size=page_size)
 
 
 @router.get("/{listing_id}", response_model=ListingOut)

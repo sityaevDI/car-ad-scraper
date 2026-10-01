@@ -57,3 +57,18 @@ class ListingSnapshotOut(BaseModel):
 class ListingHistoryOut(BaseModel):
     listing: ListingOut
     snapshots: list[ListingSnapshotOut]
+
+
+class FollowedListingOut(BaseModel):
+    listing: ListingOut
+    followed_at: datetime
+    # None when the listing has no snapshot at or before the follow (shouldn't happen for listings
+    # scraped by this app — the first snapshot is written with the listing itself).
+    price_at_follow: int | None
+
+
+class FollowedListingsOut(BaseModel):
+    items: list[FollowedListingOut]
+    total: int
+    page: int
+    page_size: int

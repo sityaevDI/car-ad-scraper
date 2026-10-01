@@ -2,7 +2,8 @@
 tests/unit/test_scrape_endpoints.py's pattern.
 """
 
-from datetime import datetime, timezone
+import uuid
+from datetime import datetime, timedelta, timezone
 
 import pytest
 import pytest_asyncio
@@ -18,6 +19,7 @@ from app.db.session import get_session
 from app.infrastructure.redis import get_redis
 from app.main import app
 from app.models.listing import Listing, ListingStatus
+from app.models.snapshot import ListingSnapshot
 from app.models.source import Source
 
 
@@ -182,3 +184,122 @@ async def test_follow_unknown_listing_404s(client, email_sender):
         "/api/v1/listings/00000000-0000-0000-0000-000000000000/follow", headers=_csrf_headers(client)
     )
     assert response.status_code == 404
+
+
+async def _seed_listings(session_factory, count: int, status: ListingStatus = ListingStatus.ACTIVE) -> list[str]:
+    now = datetime.now(timezone.utc)
+    async with session_factory() as session:
+        source = Source(code="polovniautomobili", name="Polovni Automobili", domain="x.rs", country="RS")
+        session.add(source)
+        await session.flush()
+        listings = [
+            Listing(
+                source_id=source.id,
+                external_id=str(i),
+                canonical_url=f"https://x.rs/{i}",
+                title=f"Listing {i}",
+                make="Skoda",
+                model="Octavia",
+                production_year=2019,
+                mileage_km=100_000,
+                price=10_000,
+                currency="EUR",
+                status=status,
+                first_seen_at=now,
+                last_seen_at=now,
+                last_checked_at=now,
+            )
+            for i in range(count)
+        ]
+        session.add_all(listings)
+        await session.commit()
+        return [str(listing.id) for listing in listings]
+
+
+async def test_list_followed_listings_requires_auth(client):
+    response = await client.get("/api/v1/listings/following")
+    assert response.status_code == 401
+
+
+async def test_list_followed_listings_is_empty_without_follows(client, email_sender):
+    await _register_and_login(client, email_sender)
+    response = await client.get("/api/v1/listings/following")
+    assert response.status_code == 200
+    assert response.json() == {"items": [], "total": 0, "page": 1, "page_size": 20}
+
+
+async def test_list_followed_listings_returns_newest_follow_first_and_only_own(
+    client, email_sender, session_factory
+):
+    first, second, unfollowed = await _seed_listings(session_factory, 3)
+    await _register_and_login(client, email_sender)
+    await client.post(f"/api/v1/listings/{first}/follow", headers=_csrf_headers(client))
+    await client.post(f"/api/v1/listings/{second}/follow", headers=_csrf_headers(client))
+    await client.post("/api/v1/auth/logout", headers=_csrf_headers(client))
+
+    # Another user's follow of a third listing must not leak into the first user's list.
+    await _register_and_login(client, email_sender, email="other@example.com")
+    await client.post(f"/api/v1/listings/{unfollowed}/follow", headers=_csrf_headers(client))
+    await client.post("/api/v1/auth/logout", headers=_csrf_headers(client))
+
+    await _register_and_login(client, email_sender, email="follower@example.com")
+    response = await client.get("/api/v1/listings/following")
+    body = response.json()
+    assert body["total"] == 2
+    assert [item["listing"]["id"] for item in body["items"]] == [second, first]
+    assert all(item["listing"]["is_following"] is True for item in body["items"])
+
+
+async def test_list_followed_listings_includes_removed_listings(client, email_sender, session_factory):
+    (listing_id,) = await _seed_listings(session_factory, 1, status=ListingStatus.REMOVED)
+    await _register_and_login(client, email_sender)
+    await client.post(f"/api/v1/listings/{listing_id}/follow", headers=_csrf_headers(client))
+
+    body = (await client.get("/api/v1/listings/following")).json()
+    assert [item["listing"]["status"] for item in body["items"]] == ["removed"]
+
+
+async def test_list_followed_listings_price_at_follow_ignores_later_snapshots(
+    client, email_sender, session_factory
+):
+    (listing_id,) = await _seed_listings(session_factory, 1)
+    now = datetime.now(timezone.utc)
+    async with session_factory() as session:
+        for captured_at, price in [(now - timedelta(days=5), 12_000), (now - timedelta(days=2), 11_000)]:
+            session.add(
+                ListingSnapshot(
+                    listing_id=uuid.UUID(listing_id), captured_at=captured_at, price=price, mileage_km=1, title="t"
+                )
+            )
+        await session.commit()
+    await _register_and_login(client, email_sender)
+    await client.post(f"/api/v1/listings/{listing_id}/follow", headers=_csrf_headers(client))
+    # A price drop after the follow — this is the "current" price, not the price at follow time.
+    async with session_factory() as session:
+        session.add(
+            ListingSnapshot(
+                listing_id=uuid.UUID(listing_id),
+                captured_at=now + timedelta(hours=1),
+                price=9_000,
+                mileage_km=1,
+                title="t",
+            )
+        )
+        await session.commit()
+
+    (item,) = (await client.get("/api/v1/listings/following")).json()["items"]
+    assert item["price_at_follow"] == 11_000
+    assert item["listing"]["price"] == 10_000
+
+
+async def test_list_followed_listings_paginates(client, email_sender, session_factory):
+    listing_ids = await _seed_listings(session_factory, 3)
+    await _register_and_login(client, email_sender)
+    for listing_id in listing_ids:
+        await client.post(f"/api/v1/listings/{listing_id}/follow", headers=_csrf_headers(client))
+
+    response = await client.get("/api/v1/listings/following", params={"page": 2, "page_size": 2})
+    body = response.json()
+    assert body["total"] == 3
+    assert (body["page"], body["page_size"]) == (2, 2)
+    assert [item["listing"]["id"] for item in body["items"]] == [listing_ids[0]]

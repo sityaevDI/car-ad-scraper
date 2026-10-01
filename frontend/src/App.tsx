@@ -3,6 +3,7 @@ import { RequireAdmin } from './admin/RequireAdmin'
 import { RequireAuth } from './auth/RequireAuth'
 import { Layout } from './components/Layout'
 import { AdminJobsPage } from './pages/AdminJobsPage'
+import { FollowingPage } from './pages/FollowingPage'
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage'
 import { ListingDetailPage } from './pages/ListingDetailPage'
 import { LoginPage } from './pages/LoginPage'
@@ -25,6 +26,7 @@ export function App() {
           <Route path="/" element={<SearchPage />} />
           <Route path="/saved-searches" element={<SavedSearchesPage />} />
           <Route path="/saved-searches/:id" element={<OpenSavedSearchPage />} />
+          <Route path="/following" element={<FollowingPage />} />
           <Route path="/notifications" element={<NotificationsPage />} />
         </Route>
         <Route path="/login" element={<LoginPage />} />

@@ -46,6 +46,19 @@ export interface ListingHistoryOut {
   snapshots: ListingSnapshotOut[]
 }
 
+export interface FollowedListingOut {
+  listing: ListingOut
+  followed_at: string
+  price_at_follow: number | null
+}
+
+export interface FollowedListingsOut {
+  items: FollowedListingOut[]
+  total: number
+  page: number
+  page_size: number
+}
+
 export type MarketConfidence = 'insufficient' | 'low' | 'medium' | 'high'
 
 export interface MarketEstimateOut {
@@ -71,6 +84,8 @@ export interface MarketComparisonOut {
 }
 
 export const listingsApi = {
+  listFollowing: (page: number, pageSize: number) =>
+    apiFetch<FollowedListingsOut>(`/api/v1/listings/following?page=${page}&page_size=${pageSize}`),
   get: (id: string) => apiFetch<ListingOut>(`/api/v1/listings/${id}`),
   getHistory: (id: string) => apiFetch<ListingHistoryOut>(`/api/v1/listings/${id}/history`),
   follow: (id: string) => apiFetch<void>(`/api/v1/listings/${id}/follow`, { method: 'POST' }),
