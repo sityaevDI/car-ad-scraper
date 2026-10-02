@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useCurrentUser } from '../auth/useCurrentUser'
 import { ErrorState } from '../components/StateMessage'
 import { StatusBadge } from '../components/StatusBadge'
@@ -16,6 +16,7 @@ import {
   INTERIOR_MATERIAL_OPTIONS,
   TRANSMISSION_OPTIONS,
 } from '../search/constants'
+import { parseBackTarget } from '../search/searchUrl'
 
 const TAG_LABELS = new Map<string, string>(
   [
@@ -141,8 +142,30 @@ function Field({ label, value }: { label: string; value: string }) {
 
 export function ListingDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const location = useLocation()
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const { user } = useCurrentUser()
   const [isTogglingFollow, setIsTogglingFollow] = useState(false)
+
+  // The exact search this listing was opened from (see ListingCard). It arrives as `?from=` so it
+  // survives being opened in a new tab, then is moved into this history entry's state and out of
+  // the address bar — the state outlives a reload, the long encoded URL needn't. Opened from
+  // anywhere else (notification, pasted link) there's no `from`, and "К поиску" is a plain "/".
+  const fromParam = parseBackTarget(searchParams.get('from'))
+  const fromState = parseBackTarget((location.state as { from?: string } | null)?.from ?? null)
+  const backToSearch = fromParam ?? fromState ?? '/'
+
+  const hasFromParam = searchParams.has('from')
+  useEffect(() => {
+    if (!hasFromParam) return
+    const rest = new URLSearchParams(searchParams)
+    rest.delete('from')
+    navigate(
+      { pathname: location.pathname, search: rest.size > 0 ? `?${rest}` : '' },
+      { replace: true, state: fromParam ? { from: fromParam } : location.state },
+    )
+  }, [hasFromParam, searchParams, fromParam, location.pathname, location.state, navigate])
 
   const query = useQuery({
     queryKey: ['listing-history', id],
@@ -197,7 +220,7 @@ export function ListingDetailPage() {
 
   return (
     <div className="space-y-6">
-      <Link to="/" className="text-sm font-medium text-slate-600 hover:underline">
+      <Link to={backToSearch} className="text-sm font-medium text-slate-600 hover:underline">
         ← К поиску
       </Link>
 

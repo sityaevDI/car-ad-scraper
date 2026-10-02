@@ -3,10 +3,11 @@ import { Navigate, useParams } from 'react-router-dom'
 import { ErrorState } from '../components/StateMessage'
 import { ApiError } from '../lib/client'
 import { savedSearchesApi } from '../lib/savedSearches'
+import { searchPathForSaved } from '../search/searchUrl'
 
 // Landing point for the "N new listings" email link (app/notifications/delivery.py) — loads the
-// saved search then hands its query off to SearchPage via router state, same as the "Открыть в
-// поиске" link on SavedSearchesPage.
+// saved search then hands its filters and saved layout off to SearchPage as URL params, same as
+// the "Открыть в поиске" link on SavedSearchesPage.
 export function OpenSavedSearchPage() {
   const { id } = useParams<{ id: string }>()
 
@@ -33,5 +34,5 @@ export function OpenSavedSearchPage() {
     )
   }
 
-  return <Navigate to="/" state={{ savedQuery: query.data!.query }} replace />
+  return <Navigate to={searchPathForSaved(query.data!)} replace />
 }

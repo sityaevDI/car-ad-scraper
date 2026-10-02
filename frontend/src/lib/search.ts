@@ -63,6 +63,10 @@ export const GROUP_FIELD_LABELS: Record<GroupField, string> = {
 // Mirrors SearchRequest.group_by's default in app/search/query.py.
 export const DEFAULT_GROUP_BY: GroupField[] = ['make', 'model', 'engine_volume_cc', 'fuel_type', 'transmission']
 
+export function describeGrouping(groupBy: GroupField[]): string {
+  return groupBy.length ? groupBy.map((field) => GROUP_FIELD_LABELS[field]).join(' → ') : 'без группировки'
+}
+
 export interface SearchRequest {
   query: SearchQuery
   group_by?: GroupField[] | null

@@ -99,11 +99,15 @@ export function SearchFilters({
   onChange,
   onSubmit,
   isSubmitting,
+  onReset,
+  canReset,
 }: {
   value: SearchQuery
   onChange: (next: SearchQuery) => void
   onSubmit: () => void
   isSubmitting: boolean
+  onReset: () => void
+  canReset: boolean
 }) {
   const { makes, isLoading: makesLoading } = useVehicleMakes()
   const makeOptions = Object.keys(makes).sort()
@@ -249,13 +253,24 @@ export function SearchFilters({
         onChange={(v) => onChange({ ...value, equipment: v })}
       />
 
-      <button
-        type="submit"
-        disabled={isSubmitting}
-        className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
-      >
-        Найти
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          type="submit"
+          disabled={isSubmitting}
+          className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+        >
+          Найти
+        </button>
+        <button
+          type="button"
+          onClick={onReset}
+          disabled={!canReset}
+          title="Очистить все фильтры и показать все объявления"
+          className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Сбросить
+        </button>
+      </div>
     </form>
   )
 }

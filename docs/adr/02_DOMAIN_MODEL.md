@@ -125,6 +125,7 @@ Saved Search принадлежит пользователю и содержит
 - user_id;
 - name;
 - query;
+- view settings (group_by / min_group_count / sort — только представление, вне `query` и его hash);
 - enabled;
 - notification settings;
 - last_run_at.

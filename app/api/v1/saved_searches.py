@@ -9,7 +9,7 @@ from app.db.session import get_session
 from app.models.saved_search import SavedSearch
 from app.models.user import User
 from app.saved_searches.repository import MAX_FREE_SAVED_SEARCHES, SavedSearchRepository
-from app.saved_searches.schemas import SavedSearchCreate, SavedSearchOut, SavedSearchUpdate
+from app.saved_searches.schemas import SavedSearchCreate, SavedSearchOut, SavedSearchUpdate, SavedSearchView
 from app.search.query import SearchQuery, SearchRequest
 from app.search.schemas import SearchResponse
 from app.search.service import SearchService
@@ -42,6 +42,7 @@ async def create_saved_search(
         user_id=current_user.id,
         name=payload.name,
         query=payload.query.model_dump(),
+        view_settings=payload.view_settings.model_dump() if payload.view_settings else None,
         notification_settings=payload.notification_settings,
     )
     session.add(saved_search)
@@ -77,6 +78,8 @@ async def update_saved_search(
         saved_search.name = payload.name
     if payload.query is not None:
         saved_search.query = payload.query.model_dump()
+    if payload.view_settings is not None:
+        saved_search.view_settings = payload.view_settings.model_dump()
     if payload.enabled is not None:
         saved_search.enabled = payload.enabled
     if payload.notification_settings is not None:
@@ -114,7 +117,11 @@ async def run_saved_search(
         raise HTTPException(status_code=404, detail="Saved search not found")
 
     query = SearchQuery.model_validate(saved_search.query)
-    result = await SearchService(session).search(SearchRequest(query=query))
+    # A saved layout is applied as-is (an empty group_by means a flat listing); without one the
+    # request keeps SearchRequest's defaults.
+    view = SavedSearchView.model_validate(saved_search.view_settings) if saved_search.view_settings else None
+    request = SearchRequest(query=query, **view.model_dump()) if view else SearchRequest(query=query)
+    result = await SearchService(session).search(request)
 
     saved_search.last_run_at = datetime.now(timezone.utc)
     await session.commit()

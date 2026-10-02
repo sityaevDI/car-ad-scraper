@@ -3,8 +3,9 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ApiError } from '../lib/client'
 import { formatDate } from '../lib/format'
-import { describeQuery } from '../lib/search'
+import { describeGrouping, describeQuery } from '../lib/search'
 import { savedSearchesApi } from '../lib/savedSearches'
+import { searchPathForSaved, viewFromSaved } from '../search/searchUrl'
 import { EmptyState, ErrorState, LoadingState } from '../components/StateMessage'
 
 export function SavedSearchesPage() {
@@ -73,15 +74,21 @@ export function SavedSearchesPage() {
               {query.data.map((saved) => (
                 <tr key={saved.id} className="border-b border-slate-100 last:border-0">
                   <td className="px-4 py-2 font-medium text-slate-900">{saved.name}</td>
-                  <td className="px-4 py-2 text-slate-600">{describeQuery(saved.query)}</td>
+                  <td className="px-4 py-2 text-slate-600">
+                    {describeQuery(saved.query)}
+                    {saved.view_settings && (
+                      <div className="text-xs text-slate-400">
+                        Группировка: {describeGrouping(viewFromSaved(saved.view_settings).groupBy)}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-4 py-2 text-slate-700">{saved.enabled ? 'активен' : 'приостановлен'}</td>
                   <td className="px-4 py-2 text-slate-500">
                     {saved.last_run_at ? formatDate(saved.last_run_at) : 'ещё не запускался'}
                   </td>
                   <td className="px-4 py-2 text-right">
                     <Link
-                      to="/"
-                      state={{ savedQuery: saved.query }}
+                      to={searchPathForSaved(saved)}
                       className="text-xs font-medium text-slate-700 hover:underline"
                     >
                       Открыть в поиске
