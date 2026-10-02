@@ -28,7 +28,13 @@ function tag(value: string | null): string | null {
   return TAG_LABELS.get(value) ?? value
 }
 
-export function ListingCard({ listing }: { listing: ListingOut }) {
+// `from` is the search-page URL to return to. It rides in the link's own URL rather than in router
+// state or storage, so "← К поиску" still lands on the right search when the card is opened in a
+// new tab (ctrl/middle click), where neither this tab's state nor its sessionStorage exists.
+export function ListingCard({ listing, from }: { listing: ListingOut; from?: string }) {
+  const listingPath = from
+    ? `/listings/${listing.id}?${new URLSearchParams({ from })}`
+    : `/listings/${listing.id}`
   const tags = [
     tag(listing.fuel_type),
     tag(listing.transmission),
@@ -85,7 +91,7 @@ export function ListingCard({ listing }: { listing: ListingOut }) {
         </div>
       </div>
       {/* Stretched link: makes the whole card (image, title, "Подробнее" text, etc.) clickable. */}
-      <Link to={`/listings/${listing.id}`} className="absolute inset-0 rounded-lg" aria-label={`Подробнее: ${listing.title}`} />
+      <Link to={listingPath} className="absolute inset-0 rounded-lg" aria-label={`Подробнее: ${listing.title}`} />
     </div>
   )
 }

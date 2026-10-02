@@ -129,6 +129,49 @@ async def test_new_match_notifies_owner_of_matching_saved_search(session_factory
         assert notifications[0].payload["query_description"] == "Skoda"
 
 
+async def test_new_match_ignores_saved_view_settings_when_matching(session_factory):
+    """Same filters, different saved grouping/sort: still the same search for matching purposes —
+    view_settings is presentation only and must not split subscribers into separate match groups.
+    """
+    async with session_factory() as session:
+        source_id, listing_id = await _seed_source_and_listing(session)
+        alice, bob, carol = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+        query = SearchQuery(make="Skoda")
+        session.add_all(
+            [
+                SavedSearch(user_id=alice, name="Alice", query=query.model_dump(), enabled=True),
+                SavedSearch(
+                    user_id=bob,
+                    name="Bob",
+                    query=query.model_dump(),
+                    view_settings={"group_by": ["make", "model"], "min_group_count": 3, "sort": "price_asc"},
+                    enabled=True,
+                ),
+                SavedSearch(
+                    user_id=carol,
+                    name="Carol",
+                    query=query.model_dump(),
+                    view_settings={"group_by": [], "min_group_count": None, "sort": "first_seen_desc"},
+                    enabled=True,
+                ),
+            ]
+        )
+        job = ScrapeJob(
+            source_id=source_id,
+            job_type=ScrapeJobType.SAVED_SEARCH_REFRESH,
+            status=ScrapeJobStatus.RUNNING,
+            query=encode_job_query(query, max_pages=5),
+        )
+        session.add(job)
+        await session.commit()
+
+        await generate_notifications_for_job(session, job, ScrapeStats(new_listing_ids=[listing_id]))
+        await session.commit()
+
+        notifications = (await session.execute(select(Notification))).scalars().all()
+        assert sorted(n.user_id for n in notifications) == sorted([alice, bob, carol])
+
+
 async def test_new_match_creates_one_aggregated_notification_for_multiple_new_listings(session_factory):
     async with session_factory() as session:
         source_id, listing_id_1 = await _seed_source_and_listing(session, external_id="1")

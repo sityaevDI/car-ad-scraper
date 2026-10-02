@@ -14,6 +14,8 @@ export function ViewControls({
   onSortChange,
   minGroupCount,
   onMinGroupCountChange,
+  onReset,
+  canReset,
 }: {
   groupBy: GroupField[]
   onGroupByChange: (next: GroupField[]) => void
@@ -21,6 +23,8 @@ export function ViewControls({
   onSortChange: (next: string) => void
   minGroupCount: number | null
   onMinGroupCountChange: (next: number | null) => void
+  onReset: () => void
+  canReset: boolean
 }) {
   const isGrouped = groupBy.length > 0
   const sortOptions = isGrouped ? GROUP_SORT_OPTIONS : FLAT_SORT_OPTIONS
@@ -73,6 +77,15 @@ export function ViewControls({
             ))}
           </select>
         </label>
+        <button
+          type="button"
+          onClick={onReset}
+          disabled={!canReset}
+          title="Вернуть группировку, мин. кол-во в группе и сортировку к значениям по умолчанию"
+          className="rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Сбросить группировку
+        </button>
       </div>
     </div>
   )

@@ -10,7 +10,17 @@ import { FLAT_SORT_OPTIONS, searchApi } from '../lib/search'
 import { DRILL_DOWN_PAGE_SIZE } from './constants'
 import { buildDrillDownQuery } from './drillDown'
 
-export function GroupCard({ group, baseQuery, groupBy }: { group: ListingGroupOut; baseQuery: SearchQuery; groupBy: GroupField[] }) {
+export function GroupCard({
+  group,
+  baseQuery,
+  groupBy,
+  from,
+}: {
+  group: ListingGroupOut
+  baseQuery: SearchQuery
+  groupBy: GroupField[]
+  from: string
+}) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [page, setPage] = useState(1)
   const [sort, setSort] = useState('first_seen_desc')
@@ -103,7 +113,7 @@ export function GroupCard({ group, baseQuery, groupBy }: { group: ListingGroupOu
             <>
               <div className="space-y-3">
                 {query.data.listings.map((listing) => (
-                  <ListingCard key={listing.id} listing={listing} />
+                  <ListingCard key={listing.id} listing={listing} from={from} />
                 ))}
               </div>
               <Pagination page={page} pageSize={DRILL_DOWN_PAGE_SIZE} total={query.data.total_listings} onPageChange={setPage} />
