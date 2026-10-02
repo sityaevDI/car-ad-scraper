@@ -69,17 +69,24 @@ export function isDefaultView(view: ViewSettings): boolean {
 }
 
 export function hasActiveFilters(query: SearchQuery): boolean {
-  return Object.values(query).some((value) => (Array.isArray(value) ? value.length > 0 : value !== undefined && value !== ''))
+  return Object.values(query).some((value) => (Array.isArray(value) ? value.length > 0 : !isUnset(value)))
 }
 
 function isGroupField(value: string): value is GroupField {
   return value in GROUP_FIELD_LABELS
 }
 
+// A query that came from the API (a saved search) is SearchQuery.model_dump(): every unset field is
+// an explicit `null`, not a missing key — so "unset" has to cover both, or a null list is iterated
+// and a null number is written out as the string "null".
+function isUnset(value: unknown): boolean {
+  return value === undefined || value === null || value === ''
+}
+
 function appendQuery(params: URLSearchParams, query: SearchQuery): void {
   for (const [key, kind] of QUERY_FIELD_ENTRIES) {
     const value = query[key]
-    if (value === undefined || value === '') continue
+    if (isUnset(value)) continue
     if (kind === 'list') {
       for (const item of value as string[]) params.append(key, item)
     } else {
