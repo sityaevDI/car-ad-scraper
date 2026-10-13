@@ -11,6 +11,14 @@ from app.sources.polovniautomobili.adapter import PolovniAutomobiliSource
 
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "polovniautomobili"
 
+
+def _fixture_search_form_options() -> dict:
+    """The site's own filter option lists (`value` is what ?<name>[]= takes) from the search page."""
+    from app.sources.polovniautomobili.adapter import _extract_next_data
+
+    html = (FIXTURES / "search_page_01.html").read_text(encoding="utf-8")
+    return _extract_next_data(html)["props"]["pageProps"]["searchFormOptions"]
+
 _PROXY = ProxyEndpoint(url="http://user:pass@geo.iproyal.com:12321")
 
 
@@ -265,6 +273,116 @@ def test_build_search_url_maps_fuel_types_to_site_codes():
     assert "fuel%5B%5D=hybridGasoline" in url
     assert "fuel%5B%5D=hybridDiesel" in url
     assert "fuel%5B%5D=plugInHybrid" in url
+
+
+def test_build_search_url_maps_drive_and_body_types_to_site_facets():
+    """Verified live 2026-10-10: ?drive[]=4x4&chassis[]=sedan&chassis[]=caravan narrows BMW from
+    297 result pages to 39. Without them a "BMW wagon/sedan AWD" saved search crawled plain
+    `brand=BMW`. The normalized "awd"/"wagon" differ from the site's own facet values (4x4/caravan).
+    """
+    from app.search.query import SearchQuery
+
+    adapter = PolovniAutomobiliSource()
+    url = adapter.build_search_url(SearchQuery(make="BMW", body_types=["wagon", "sedan"], drive_types=["awd"]))
+
+    assert "brand=BMW" in url
+    assert "drive%5B%5D=4x4" in url
+    assert "chassis%5B%5D=caravan" in url
+    assert "chassis%5B%5D=sedan" in url
+
+
+def test_build_search_url_maps_the_remaining_facet_filters():
+    """Verified live 2026-10-12: gearBox[]/interiorMaterial[]/airCondition[]/seats[] each narrow the
+    result list. Our "manual" is three of the site's gearbox facets.
+    """
+    from app.search.query import SearchQuery
+
+    url = PolovniAutomobiliSource().build_search_url(
+        SearchQuery(
+            transmissions=["manual"],
+            interior_materials=["combined_leather", "velour"],
+            air_conditions=["automatic"],
+            seats=["5"],
+        )
+    )
+
+    for facet in ("manual4Gears", "manual5Gears", "manual6Gears"):
+        assert f"gearBox%5B%5D={facet}" in url
+    assert "interiorMaterial%5B%5D=combinedLeather" in url
+    assert "interiorMaterial%5B%5D=velor" in url
+    assert "airCondition%5B%5D=automatic" in url
+    assert "seats%5B%5D=5" in url
+
+
+def test_build_search_url_sends_equipment_as_boolean_params_not_an_array():
+    """The site ignores equipment[]=... and takes one `<facet>=true` param per option (verified
+    live 2026-10-12: panoramicRoof=true -> 35 BMW pages, heatedSeats=true -> 119, both -> 30).
+    """
+    from app.search.query import SearchQuery
+
+    url = PolovniAutomobiliSource().build_search_url(SearchQuery(equipment=["panoramic_roof", "heated_seats"]))
+
+    assert "panoramicRoof=true" in url
+    assert "heatedSeats=true" in url
+    assert "equipment" not in url
+
+
+def test_build_search_url_skips_values_the_site_has_no_facet_for():
+    """A value without a facet leaves the filter off (a wider crawl; matching.py re-checks the
+    full saved-search query) rather than sending something the site would ignore or choke on.
+    """
+    from app.search.query import SearchQuery
+
+    url = PolovniAutomobiliSource().build_search_url(
+        SearchQuery(drive_types=["hovercraft"], equipment=["flux_capacitor"], seats=["12"])
+    )
+
+    assert "drive" not in url
+    assert "flux" not in url
+    assert "seats" not in url
+
+
+def test_build_search_url_sorts_stalest_first_by_default_and_newest_first_on_request():
+    """Stalest-first keeps a long full crawl stable underneath itself; a short, capped crawl (a
+    saved-search refresh) has to read the newest pages instead — verified live 2026-10-12 that on
+    a 38-page search, page 1 stalest-first was a month old and the newest ads were on page 38.
+    """
+    from app.search.query import SearchQuery
+
+    query = SearchQuery(make="BMW")
+
+    assert "sort=renew_date_asc" in PolovniAutomobiliSource().build_search_url(query)
+    assert "sort=renew_date_desc" in PolovniAutomobiliSource(newest_first=True).build_search_url(query)
+
+
+def test_facet_tables_only_use_values_the_site_itself_offers_and_cover_every_normalized_value():
+    """Guards both directions against drifting: a typo'd facet value (site ignores it, filter
+    silently lost) and a normalized value the mapper can produce but no facet exists for (filter
+    silently lost for that value). The site's option lists are in the search-page fixture.
+    """
+    from app.sources.polovniautomobili import adapter, mapper
+
+    options = _fixture_search_form_options()
+
+    def site_values(group: str) -> set[str]:
+        return {option["value"] for option in options[group]}
+
+    def used(table: dict) -> set[str]:
+        return {facet for facets in table.values() for facet in ((facets,) if isinstance(facets, str) else facets)}
+
+    assert used(adapter._DRIVE_FACET_BY_NORMALIZED) == site_values("drive")
+    assert used(adapter._CHASSIS_FACET_BY_NORMALIZED) == site_values("chassis")
+    assert used(adapter._GEARBOX_FACET_BY_NORMALIZED) == site_values("gearBox")
+    assert used(adapter._INTERIOR_MATERIAL_FACET_BY_NORMALIZED) == site_values("interiorMaterial")
+    assert used(adapter._AIR_CONDITION_FACET_BY_NORMALIZED) == site_values("airCondition")
+    assert used(adapter._SEATS_FACET_BY_NORMALIZED) == site_values("seats")
+    assert used(adapter._EQUIPMENT_FACET_BY_NORMALIZED) <= site_values("equipment")
+
+    assert set(adapter._DRIVE_FACET_BY_NORMALIZED) == set(mapper._DRIVE_TYPE_NORMALIZED.values())
+    assert set(adapter._CHASSIS_FACET_BY_NORMALIZED) == set(mapper._BODY_TYPE_NORMALIZED.values())
+    assert set(adapter._INTERIOR_MATERIAL_FACET_BY_NORMALIZED) == set(mapper._INTERIOR_MATERIAL_NORMALIZED.values())
+    assert set(adapter._AIR_CONDITION_FACET_BY_NORMALIZED) == set(mapper._AIR_CONDITION_NORMALIZED.values())
+    assert set(adapter._EQUIPMENT_FACET_BY_NORMALIZED) == set(mapper._EQUIPMENT_NORMALIZED.values())
 
 
 async def test_fetch_direct_success_never_touches_proxy(monkeypatch):

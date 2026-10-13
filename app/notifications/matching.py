@@ -19,6 +19,7 @@ from app.notifications.service import NotificationService
 from app.scraping.pipeline import ScrapeStats
 from app.scraping.schemas import decode_job_query
 from app.search.query import SearchQuery
+from app.search.service import apply_filters
 
 EmailEnqueuer = Callable[[str], Awaitable[None]]
 
@@ -27,6 +28,10 @@ EmailEnqueuer = Callable[[str], Awaitable[None]]
 # row; the UI shows "+N more" beyond this using new_listings_count, which always carries the full
 # total.
 _NEW_LISTINGS_PREVIEW_LIMIT = 5
+
+# Keeps the `Listing.id IN (...)` list well under the DB driver's bind-parameter limit (32767 for
+# asyncpg) — a FULL_SOURCE_REFRESH can touch far more listings than a saved-search crawl does.
+_ID_FILTER_CHUNK_SIZE = 1000
 
 
 async def generate_notifications_for_job(
@@ -93,14 +98,35 @@ async def _new_listings_preview(session: AsyncSession, listing_ids: list[uuid.UU
     ]
 
 
+async def _listing_ids_matching_query(
+    session: AsyncSession, listing_ids: list[uuid.UUID], query: SearchQuery
+) -> list[uuid.UUID]:
+    """The subset of `listing_ids` that satisfies every filter of `query`, in the original order.
+
+    A scrape run only guarantees that what it saw matched whatever filters the *source adapter*
+    could express in its search URL (e.g. PolovniAutomobiliSource.build_search_url ignores
+    transmissions, interior_materials, equipment, ...) — so it can't be taken as proof that a
+    listing matches the saved search. The DB filter is the same one the search page itself uses
+    (app/search/service.py::apply_filters), so a notification only ever counts listings the user
+    would actually see in that search.
+    """
+    matching: set[uuid.UUID] = set()
+    for start in range(0, len(listing_ids), _ID_FILTER_CHUNK_SIZE):
+        chunk = listing_ids[start : start + _ID_FILTER_CHUNK_SIZE]
+        stmt = apply_filters(select(Listing.id).where(Listing.id.in_(chunk)), query)
+        matching.update((await session.execute(stmt)).scalars().all())
+    return [listing_id for listing_id in listing_ids if listing_id in matching]
+
+
 async def _notify_new_matches(
     session: AsyncSession, service: NotificationService, job: ScrapeJob, stats: ScrapeStats
 ) -> None:
     """One notification per (saved search, scrape run) — "N new, M updated for X" — not one per
-    listing. Every listing this run (new or updated) matched the same job query, which is exactly
-    the saved search's query, so both counts are the same for every saved search that matches it.
+    listing. Saved searches are matched to the job by identical query (stable_hash), so the counts
+    are the same for every saved search that matches it. They only count listings that actually
+    satisfy that query, not everything the run happened to crawl (see _listing_ids_matching_query).
     """
-    if not stats.new_listing_ids and not stats.listings_updated:
+    if not stats.new_listing_ids and not stats.updated_listing_ids:
         return
 
     job_query, _ = decode_job_query(job.query)
@@ -108,9 +134,14 @@ async def _notify_new_matches(
     if not matching_saved_searches:
         return
 
-    new_count = len(stats.new_listing_ids)
-    updated_count = stats.listings_updated
-    new_listings = await _new_listings_preview(session, stats.new_listing_ids)
+    new_listing_ids = await _listing_ids_matching_query(session, stats.new_listing_ids, job_query)
+    updated_listing_ids = await _listing_ids_matching_query(session, stats.updated_listing_ids, job_query)
+    if not new_listing_ids and not updated_listing_ids:
+        return
+
+    new_count = len(new_listing_ids)
+    updated_count = len(updated_listing_ids)
+    new_listings = await _new_listings_preview(session, new_listing_ids)
     for saved_search in matching_saved_searches:
         await service.notify(
             saved_search.user_id,

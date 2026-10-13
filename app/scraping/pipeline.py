@@ -64,6 +64,7 @@ class ScrapeStats:
     # app/notifications/matching.py (issues #21/#26) to generate NEW_MATCH/PRICE_DROP events
     # without re-querying "what changed this run".
     new_listing_ids: list[uuid.UUID] = field(default_factory=list)
+    updated_listing_ids: list[uuid.UUID] = field(default_factory=list)
     price_drops: list[tuple[uuid.UUID, int, int]] = field(default_factory=list)  # (listing_id, previous, current)
 
 
@@ -122,6 +123,7 @@ async def run_scrape(
     max_pages: int = 5,
     proxy_provider: ProxyProvider | None = None,
     mark_removed: bool = False,
+    newest_first: bool = False,
 ) -> ScrapeStats:
     """`mark_removed` transitions listings absent from this crawl to REMOVED (see
     ListingRepository.mark_missing_as_removed) — only safe when `query` covers the whole source,
@@ -129,6 +131,12 @@ async def run_scrape(
     only pass it for FULL_SOURCE_REFRESH jobs (see app/scraping/worker.py), and it's skipped here
     whenever the crawl was cut short by FetchBlockedError/ParserError, since a partial crawl can't
     tell a genuinely removed listing from one it just didn't get to yet.
+
+    `newest_first` asks the source to order results newest/most-recently-renewed first. Right for a
+    crawl capped at `max_pages` well below the result list's length (it should read what changed
+    since last time, not the stalest pages); wrong for a full one, which wants the stable order
+    PolovniAutomobiliSource.build_search_url explains. Passed to the adapter only when set, so an
+    adapter that doesn't take it is unaffected.
     """
     counter = OutcomeCounter()
     rate_limit = await get_scrape_rate_limit(session)
@@ -143,6 +151,7 @@ async def run_scrape(
     # delay/jitter/network_error_retry_delay are adapter-specific kwargs only PolovniAutomobiliSource
     # accepts today (see its __init__ docstring) — fine while it's the only registered source, but
     # a second adapter without matching kwargs would need this call to become source-aware.
+    adapter_kwargs: dict[str, object] = {"newest_first": True} if newest_first else {}
     adapter = get_source_adapter(
         source_code,
         max_pages=max_pages,
@@ -151,6 +160,7 @@ async def run_scrape(
         delay=rate_limit.request_delay_seconds,
         jitter=rate_limit.request_jitter_seconds,
         network_error_retry_delay=rate_limit.network_error_retry_delay_seconds,
+        **adapter_kwargs,
     )
     source = await get_or_create_source(
         session, code=adapter.source_code, name=adapter.display_name, domain=adapter.domain, country=adapter.country
@@ -182,6 +192,7 @@ async def run_scrape(
                     # _notify_new_matches fires a NEW_MATCH notification on every single
                     # SAVED_SEARCH_REFRESH tick even when nothing actually changed.
                     stats.listings_updated += 1
+                    stats.updated_listing_ids.append(listing.id)
                     if previous_price is not None and previous_price > listing.price:
                         stats.price_drops.append((listing.id, previous_price, listing.price))
 

@@ -65,7 +65,7 @@ class _GroupRow:
     mileage_max: int
 
 
-def _apply_filters(stmt: Select, query: SearchQuery) -> Select:
+def apply_filters(stmt: Select, query: SearchQuery) -> Select:
     stmt = stmt.where(Listing.status == ListingStatus.ACTIVE)
     if query.make:
         stmt = stmt.where(func.lower(Listing.make) == query.make.lower())
@@ -146,7 +146,7 @@ class SearchService:
         return await self._search_flat(request)
 
     async def _search_flat(self, request: SearchRequest) -> SearchResponse:
-        base = _apply_filters(select(Listing), request.query)
+        base = apply_filters(select(Listing), request.query)
 
         total = (await self.session.execute(select(func.count()).select_from(base.subquery()))).scalar_one()
 
@@ -192,7 +192,7 @@ class SearchService:
             func.min(Listing.mileage_km).label("mileage_min"),
             func.max(Listing.mileage_km).label("mileage_max"),
         )
-        stmt = _apply_filters(stmt, request.query).group_by(*group_columns)
+        stmt = apply_filters(stmt, request.query).group_by(*group_columns)
         if request.min_group_count is not None:
             stmt = stmt.having(func.count(Listing.id) >= request.min_group_count)
 
