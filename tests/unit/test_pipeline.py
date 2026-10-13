@@ -487,6 +487,48 @@ async def test_run_scrape_does_not_count_a_no_op_recrawl_as_updated(session, mon
     assert stats.listings_seen == 1
     assert stats.listings_created == 0
     assert stats.listings_updated == 0
+    assert stats.updated_listing_ids == []
+
+
+async def test_run_scrape_passes_newest_first_to_the_adapter_only_when_asked(session, monkeypatch):
+    received_kwargs: list[dict] = []
+
+    class RecordingStubAdapter(StubAdapter):
+        external_ids = ["1"]
+
+        def __init__(self, **kwargs):
+            received_kwargs.append(kwargs)
+            super().__init__(**kwargs)
+
+    monkeypatch.setitem(registry.SOURCE_REGISTRY, "stub_source", RecordingStubAdapter)
+
+    await run_scrape(session, source_code="stub_source", query=SearchQuery())
+    await run_scrape(session, source_code="stub_source", query=SearchQuery(), newest_first=True)
+
+    assert "newest_first" not in received_kwargs[0]
+    assert received_kwargs[1]["newest_first"] is True
+
+
+async def test_run_scrape_records_which_listings_were_updated(session, monkeypatch):
+    """matching.py re-filters updated listings against the saved search's own query, so it needs
+    their ids, not just the listings_updated count.
+    """
+    monkeypatch.setitem(registry.SOURCE_REGISTRY, "stub_source", _make_stub_adapter(["1", "2"]))
+    await run_scrape(session, source_code="stub_source", query=SearchQuery())
+
+    class PriceChangeAdapter(StubAdapter):
+        external_ids = ["1", "2"]
+
+        async def search_with_data(self, query):
+            yield _listing("1", 9_000)
+            yield _listing("2", 10_000)
+
+    monkeypatch.setitem(registry.SOURCE_REGISTRY, "stub_source", PriceChangeAdapter)
+    stats = await run_scrape(session, source_code="stub_source", query=SearchQuery())
+
+    changed = (await session.execute(select(Listing).where(Listing.external_id == "1"))).scalar_one()
+    assert stats.listings_updated == 1
+    assert stats.updated_listing_ids == [changed.id]
 
 
 async def test_run_scrape_marks_segment_dirty_for_removed_listing(session, monkeypatch):

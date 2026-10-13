@@ -200,6 +200,7 @@ async def test_new_match_creates_one_aggregated_notification_for_multiple_new_li
 async def test_new_match_includes_updated_count(session_factory):
     async with session_factory() as session:
         source_id, listing_id = await _seed_source_and_listing(session)
+        updated_ids = [(await _seed_source_and_listing(session, source_id, external_id=str(n)))[1] for n in range(2, 5)]
         user_id = uuid.uuid4()
         query = SearchQuery(make="Skoda")
         session.add(SavedSearch(user_id=user_id, name="Skoda alert", query=query.model_dump(), enabled=True))
@@ -212,7 +213,7 @@ async def test_new_match_includes_updated_count(session_factory):
         session.add(job)
         await session.commit()
 
-        stats = ScrapeStats(new_listing_ids=[listing_id], listings_updated=3)
+        stats = ScrapeStats(new_listing_ids=[listing_id], listings_updated=3, updated_listing_ids=updated_ids)
         await generate_notifications_for_job(session, job, stats)
         await session.commit()
 
@@ -224,7 +225,8 @@ async def test_new_match_includes_updated_count(session_factory):
 
 async def test_new_match_fires_on_updates_alone(session_factory):
     async with session_factory() as session:
-        source_id, _ = await _seed_source_and_listing(session)
+        source_id, first_id = await _seed_source_and_listing(session)
+        _, second_id = await _seed_source_and_listing(session, source_id, external_id="2")
         user_id = uuid.uuid4()
         query = SearchQuery(make="Skoda")
         session.add(SavedSearch(user_id=user_id, name="Skoda alert", query=query.model_dump(), enabled=True))
@@ -238,7 +240,7 @@ async def test_new_match_fires_on_updates_alone(session_factory):
         await session.commit()
 
         # No new_listing_ids at all — only existing listings changed price/mileage/title.
-        stats = ScrapeStats(listings_updated=2)
+        stats = ScrapeStats(listings_updated=2, updated_listing_ids=[first_id, second_id])
         await generate_notifications_for_job(session, job, stats)
         await session.commit()
 
@@ -246,6 +248,71 @@ async def test_new_match_fires_on_updates_alone(session_factory):
         assert len(notifications) == 1
         assert notifications[0].payload["new_listings_count"] == 0
         assert notifications[0].payload["updated_listings_count"] == 2
+
+
+async def _seed_drive_search_and_job(session, source_id: uuid.UUID) -> tuple[SearchQuery, ScrapeJob]:
+    query = SearchQuery(make="BMW", body_types=["wagon", "sedan"], drive_types=["awd"])
+    session.add(SavedSearch(user_id=uuid.uuid4(), name="BMW AWD", query=query.model_dump(), enabled=True))
+    job = ScrapeJob(
+        source_id=source_id,
+        job_type=ScrapeJobType.SAVED_SEARCH_REFRESH,
+        status=ScrapeJobStatus.RUNNING,
+        query=encode_job_query(query, max_pages=5),
+    )
+    session.add(job)
+    await session.commit()
+    return query, job
+
+
+async def test_new_match_ignores_updates_to_listings_outside_the_saved_search_filters(session_factory):
+    """Regression: a "BMW wagon/sedan AWD" search used to report "updated N" whenever any BMW in
+    the crawl changed price — the crawl isn't narrowed by every filter, and the count wasn't
+    re-checked against the saved search's own query.
+    """
+    async with session_factory() as session:
+        source_id, rwd_wagon_id = await _seed_source_and_listing(
+            session, make="BMW", model="320d", body_type="wagon", drive_type="rear"
+        )
+        _, awd_suv_id = await _seed_source_and_listing(
+            session, source_id, external_id="2", make="BMW", model="X5", body_type="suv", drive_type="awd"
+        )
+        _, job = await _seed_drive_search_and_job(session, source_id)
+
+        stats = ScrapeStats(listings_updated=2, updated_listing_ids=[rwd_wagon_id, awd_suv_id])
+        await generate_notifications_for_job(session, job, stats)
+        await session.commit()
+
+        assert (await session.execute(select(Notification))).scalars().all() == []
+
+
+async def test_new_match_counts_only_listings_matching_the_saved_search_filters(session_factory):
+    async with session_factory() as session:
+        source_id, awd_wagon_id = await _seed_source_and_listing(
+            session, make="BMW", model="320d", body_type="wagon", drive_type="awd"
+        )
+        _, rwd_wagon_id = await _seed_source_and_listing(
+            session, source_id, external_id="2", make="BMW", model="320d", body_type="wagon", drive_type="rear"
+        )
+        _, awd_sedan_id = await _seed_source_and_listing(
+            session, source_id, external_id="3", make="BMW", model="530d", body_type="sedan", drive_type="awd"
+        )
+        _, rwd_sedan_id = await _seed_source_and_listing(
+            session, source_id, external_id="4", make="BMW", model="520d", body_type="sedan", drive_type="rear"
+        )
+        _, job = await _seed_drive_search_and_job(session, source_id)
+
+        stats = ScrapeStats(
+            new_listing_ids=[rwd_wagon_id, awd_wagon_id],
+            updated_listing_ids=[awd_sedan_id, rwd_sedan_id],
+            listings_updated=2,
+        )
+        await generate_notifications_for_job(session, job, stats)
+        await session.commit()
+
+        (notification,) = (await session.execute(select(Notification))).scalars().all()
+        assert notification.payload["new_listings_count"] == 1
+        assert notification.payload["updated_listings_count"] == 1
+        assert [item["id"] for item in notification.payload["new_listings"]] == [str(awd_wagon_id)]
 
 
 async def test_new_match_ignores_non_matching_saved_search(session_factory):

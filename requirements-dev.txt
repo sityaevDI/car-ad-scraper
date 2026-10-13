@@ -1,4 +1,6 @@
 -r requirements.txt
-ruff
+# ruff 0.17 flags UP017/UP042 across existing code (datetime.UTC, StrEnum) and broke CI on 2026-10-13.
+# Migrate that code, then drop this upper bound.
+ruff<0.17
 mypy
 fakeredis

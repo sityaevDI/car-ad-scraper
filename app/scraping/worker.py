@@ -118,6 +118,9 @@ async def run_scrape_job(ctx: dict[str, Any], job_id: str) -> None:
                     max_pages=max_pages,
                     proxy_provider=ctx["proxy_provider"],
                     mark_removed=job.job_type == ScrapeJobType.FULL_SOURCE_REFRESH,
+                    # Everything but a full refresh is a bounded crawl of the top of a result
+                    # list — it has to read the newest pages (see run_scrape's docstring).
+                    newest_first=job.job_type != ScrapeJobType.FULL_SOURCE_REFRESH,
                 ),
                 timeout=timeout_seconds,
             )

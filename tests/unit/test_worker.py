@@ -60,7 +60,7 @@ async def _seed_job(
 async def test_run_scrape_job_marks_completed_on_success(worker_session_factory, monkeypatch):
     job_id = await _seed_job(worker_session_factory)
 
-    async def fake_run_scrape(session, source_code, query, max_pages=5, proxy_provider=None, mark_removed=False):
+    async def fake_run_scrape(session, source_code, query, max_pages=5, proxy_provider=None, mark_removed=False, **_):
         return ScrapeStats(listings_seen=3, listings_created=2, listings_updated=1, outcome_counts={"success": 3})
 
     monkeypatch.setattr(worker_module, "run_scrape", fake_run_scrape)
@@ -92,7 +92,7 @@ async def test_run_scrape_job_marks_completed_when_run_scrape_expunged_the_sessi
     """
     job_id = await _seed_job(worker_session_factory)
 
-    async def fake_run_scrape(session, source_code, query, max_pages=5, proxy_provider=None, mark_removed=False):
+    async def fake_run_scrape(session, source_code, query, max_pages=5, proxy_provider=None, mark_removed=False, **_):
         session.expunge_all()
         return ScrapeStats(listings_seen=1000, listings_created=1000, outcome_counts={"success": 1000})
 
@@ -121,7 +121,7 @@ async def test_run_scrape_job_fails_fast_when_another_job_for_the_source_is_alre
 
     run_scrape_calls = []
 
-    async def fake_run_scrape(session, source_code, query, max_pages=5, proxy_provider=None, mark_removed=False):
+    async def fake_run_scrape(session, source_code, query, max_pages=5, proxy_provider=None, mark_removed=False, **_):
         run_scrape_calls.append(1)
         return ScrapeStats()
 
@@ -141,7 +141,7 @@ async def test_run_scrape_job_fails_fast_when_another_job_for_the_source_is_alre
 async def test_run_scrape_job_marks_partial_when_blocked(worker_session_factory, monkeypatch):
     job_id = await _seed_job(worker_session_factory)
 
-    async def fake_run_scrape(session, source_code, query, max_pages=5, proxy_provider=None, mark_removed=False):
+    async def fake_run_scrape(session, source_code, query, max_pages=5, proxy_provider=None, mark_removed=False, **_):
         return ScrapeStats(listings_seen=1, listings_created=1, blocked=True, outcome_counts={"forbidden": 1})
 
     monkeypatch.setattr(worker_module, "run_scrape", fake_run_scrape)
@@ -157,7 +157,7 @@ async def test_run_scrape_job_marks_partial_when_blocked(worker_session_factory,
 async def test_run_scrape_job_marks_failed_on_exception(worker_session_factory, monkeypatch):
     job_id = await _seed_job(worker_session_factory)
 
-    async def fake_run_scrape(session, source_code, query, max_pages=5, proxy_provider=None, mark_removed=False):
+    async def fake_run_scrape(session, source_code, query, max_pages=5, proxy_provider=None, mark_removed=False, **_):
         raise RuntimeError("boom")
 
     monkeypatch.setattr(worker_module, "run_scrape", fake_run_scrape)
@@ -181,7 +181,7 @@ async def test_run_scrape_job_marks_failed_when_run_scrape_expunged_the_session_
     """
     job_id = await _seed_job(worker_session_factory)
 
-    async def fake_run_scrape(session, source_code, query, max_pages=5, proxy_provider=None, mark_removed=False):
+    async def fake_run_scrape(session, source_code, query, max_pages=5, proxy_provider=None, mark_removed=False, **_):
         session.expunge_all()
         raise RuntimeError("boom")
 
@@ -205,7 +205,7 @@ async def test_run_scrape_job_marks_failed_when_session_needs_rollback(worker_se
     """
     job_id = await _seed_job(worker_session_factory)
 
-    async def fake_run_scrape(session, source_code, query, max_pages=5, proxy_provider=None, mark_removed=False):
+    async def fake_run_scrape(session, source_code, query, max_pages=5, proxy_provider=None, mark_removed=False, **_):
         session.add(Source(code="polovniautomobili", name="dup", domain="dup.example.com", country="RS"))
         await session.flush()  # raises IntegrityError: code is unique
 
@@ -225,7 +225,7 @@ async def test_run_scrape_job_passes_stored_query_and_max_pages_to_run_scrape(wo
     job_id = await _seed_job(worker_session_factory, query=encode_job_query(SearchQuery(make="Audi"), max_pages=2))
     received = {}
 
-    async def fake_run_scrape(session, source_code, query, max_pages=5, proxy_provider=None, mark_removed=False):
+    async def fake_run_scrape(session, source_code, query, max_pages=5, proxy_provider=None, mark_removed=False, **_):
         received["source_code"] = source_code
         received["query"] = query
         received["max_pages"] = max_pages
@@ -278,7 +278,7 @@ async def test_run_scrape_job_generates_and_enqueues_notification_for_price_drop
         await session.commit()
         listing_id = listing.id
 
-    async def fake_run_scrape(session, source_code, query, max_pages=5, proxy_provider=None, mark_removed=False):
+    async def fake_run_scrape(session, source_code, query, max_pages=5, proxy_provider=None, mark_removed=False, **_):
         return ScrapeStats(listings_seen=1, listings_updated=1, price_drops=[(listing_id, 12_000, 10_000)])
 
     monkeypatch.setattr(worker_module, "run_scrape", fake_run_scrape)
@@ -301,7 +301,7 @@ async def test_run_scrape_job_requests_mark_removed_only_for_full_source_refresh
     search_job_id = await _seed_job(worker_session_factory, job_type=ScrapeJobType.SEARCH)
     full_refresh_job_id = await _seed_job(worker_session_factory, job_type=ScrapeJobType.FULL_SOURCE_REFRESH)
 
-    async def fake_run_scrape(session, source_code, query, max_pages=5, proxy_provider=None, mark_removed=False):
+    async def fake_run_scrape(session, source_code, query, max_pages=5, proxy_provider=None, mark_removed=False, **_):
         return ScrapeStats(listings_removed=2 if mark_removed else 0)
 
     monkeypatch.setattr(worker_module, "run_scrape", fake_run_scrape)
@@ -315,6 +315,32 @@ async def test_run_scrape_job_requests_mark_removed_only_for_full_source_refresh
         full_refresh_job = await session.get(ScrapeJob, full_refresh_job_id)
         assert search_job.stats["listings_removed"] == 0
         assert full_refresh_job.stats["listings_removed"] == 2
+
+
+async def test_run_scrape_job_crawls_newest_first_except_for_full_source_refresh(worker_session_factory, monkeypatch):
+    """A bounded SEARCH / SAVED_SEARCH_REFRESH crawl reads only the first max_pages of a longer
+    result list, so it has to be the newest ones — otherwise new listings (which land at the tail
+    of the stalest-first order a full crawl wants) are never seen.
+    """
+    job_ids = {
+        job_type: await _seed_job(worker_session_factory, job_type=job_type)
+        for job_type in (ScrapeJobType.SEARCH, ScrapeJobType.SAVED_SEARCH_REFRESH, ScrapeJobType.FULL_SOURCE_REFRESH)
+    }
+    seen: list[bool] = []
+
+    async def fake_run_scrape(
+        session, source_code, query, max_pages=5, proxy_provider=None, mark_removed=False, newest_first=False
+    ):
+        seen.append(newest_first)
+        return ScrapeStats()
+
+    monkeypatch.setattr(worker_module, "run_scrape", fake_run_scrape)
+    ctx = {"session_factory": worker_session_factory, "proxy_provider": NullProxyProvider()}
+
+    for job_id in job_ids.values():
+        await worker_module.run_scrape_job(ctx, str(job_id))
+
+    assert seen == [True, True, False]
 
 
 def test_estimate_job_timeout_seconds_scales_with_max_pages():
@@ -338,7 +364,7 @@ async def test_run_scrape_job_marks_failed_on_computed_timeout(worker_session_fa
     job_id = await _seed_job(worker_session_factory)
     monkeypatch.setattr(worker_module, "_estimate_job_timeout_seconds", lambda *args, **kwargs: 0.05)
 
-    async def fake_run_scrape(session, source_code, query, max_pages=5, proxy_provider=None, mark_removed=False):
+    async def fake_run_scrape(session, source_code, query, max_pages=5, proxy_provider=None, mark_removed=False, **_):
         await asyncio.sleep(10)
         return ScrapeStats()
 

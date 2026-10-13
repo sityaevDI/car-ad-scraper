@@ -32,6 +32,155 @@ logger = logging.getLogger(__name__)
 _NEXT_DATA_RE = re.compile(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', re.S)
 _FUEL_CODE_BY_NORMALIZED = {normalize_fuel_type(raw): code for code, raw in fuel_type_codes.items()}
 
+# Normalized value -> the site's own facet value(s), for the filters the site takes as repeated
+# ?<name>[]=<value> params (the `value` side of searchFormOptions.<name> in
+# tests/fixtures/polovniautomobili/search_page_01.html; the mapper's *_NORMALIZED tables go the
+# other way, from the Serbian display text). Each one was applied live 2026-10-10/12 and OR's its
+# values, e.g. BMW alone is 297 result pages, with drive[]=4x4&chassis[]=sedan&chassis[]=caravan
+# it's 39. Where the site has a facet for something we normalize to, a *missing* entry just leaves
+# that filter off the URL (a wider crawl, never a narrower one — matching.py re-checks every
+# listing against the full saved-search query anyway).
+_DRIVE_FACET_BY_NORMALIZED = {
+    "front": ("front",),
+    "rear": ("rear",),
+    "awd": ("4x4",),
+    "awd_low_range": ("4x4Reducer",),
+}
+_CHASSIS_FACET_BY_NORMALIZED = {
+    "sedan": ("sedan",),
+    "hatchback": ("hatchback",),
+    "wagon": ("caravan",),
+    "coupe": ("coupe",),
+    "convertible": ("cabrioletOrRoadster",),
+    "minivan": ("minivan",),
+    "suv": ("suv",),
+    "pickup": ("pickup",),
+}
+# Our "manual" is the site's three manual facets together — together with "automatic" they
+# partition the whole brand (verified: BMW manual4+5+6 = 102 pages, automatic = 190, no filter = 292).
+_GEARBOX_FACET_BY_NORMALIZED = {
+    "manual": ("manual4Gears", "manual5Gears", "manual6Gears"),
+    "automatic": ("automatic",),
+}
+_INTERIOR_MATERIAL_FACET_BY_NORMALIZED = {
+    "cloth": ("cloth",),
+    "leather": ("leather",),
+    "combined_leather": ("combinedLeather",),
+    "velour": ("velor",),
+    "other": ("other",),
+}
+_AIR_CONDITION_FACET_BY_NORMALIZED = {
+    "none": ("none",),
+    "manual": ("manual",),
+    "automatic": ("automatic",),
+}
+_SEATS_FACET_BY_NORMALIZED = {str(count): (str(count),) for count in range(2, 10)}
+
+# Equipment is different: not ?equipment[]=, but one `?<facet>=true` param per option (what the
+# site's own search form submits — `equipment[]`/`safety[]` are silently ignored, verified live
+# 2026-10-12), and ANDed, like Listing.equipment.contains() in app/search/service.py:
+# panoramicRoof=true alone is 35 BMW pages, heatedSeats=true 119, both 30. Built by joining the
+# mapper's _EQUIPMENT_NORMALIZED to searchFormOptions.equipment on the Serbian text — all 97 match.
+_EQUIPMENT_FACET_BY_NORMALIZED = {
+    "metallic_paint": "metallicColor",
+    "body_colored_bumpers": "bodyColoredBumpers",
+    "power_steering": "powerSteering",
+    "multifunction_steering_wheel": "multiFunctionSteeringWheel",
+    "cruise_control": "cruiseControl",
+    "remote_central_locking": "remoteCentralLocking",
+    "trip_computer": "tripComputer",
+    "sunroof": "sunRoof",
+    "panoramic_roof": "panoramicRoof",
+    "tinted_windows": "tintedGlass",
+    "power_windows": "electricWindows",
+    "power_mirrors": "electricMirrors",
+    "heated_mirrors": "mirrorHeaters",
+    "height_adjustable_seats": "adjustableHeightSeats",
+    "power_adjustable_seats": "electricSeatAdjustment",
+    "heated_seats": "heatedSeats",
+    "fog_lights": "fogLights",
+    "xenon_headlights": "xenonLights",
+    "light_sensor": "lightSensors",
+    "rain_sensor": "rainSensors",
+    "parking_sensors": "parkingSensors",
+    "auxiliary_heater": "webasto",
+    "roof_rack": "roofRack",
+    "tow_hook": "towHitch",
+    "alloy_wheels": "alloyWheels",
+    "navigation_system": "navigation",
+    "bluetooth": "bluetooth",
+    "radio_cassette": "radio",
+    "radio_cd": "cdPlayer",
+    "cd_changer": "cdChanger",
+    "dvd_tv": "dvdTv",
+    "led_headlights": "ledFront",
+    "heated_windshield": "defogger",
+    "led_taillights": "ledBack",
+    "armrest": "handRest",
+    "adaptive_cruise_control": "adaptiveCruiseControl",
+    "automatic_parking": "automaticParking",
+    "camera": "camera",
+    "hands_free": "handsFree",
+    "adaptive_headlights": "adaptiveLights",
+    "head_up_display": "headUpDisplay",
+    "isofix": "isofix",
+    "start_stop_system": "startStopSystem",
+    "front_night_vision_camera": "frontNightCam",
+    "multimedia_system": "multimedia",
+    "voice_control": "voiceCommand",
+    "massage_seats": "massageSeats",
+    "power_folding_mirrors": "electricFoldableMirrors",
+    "seat_memory": "memorySeats",
+    "sport_seats": "sportSeats",
+    "sport_suspension": "sportSuspension",
+    "dpf_filter": "dpfFilter",
+    "daytime_running_lights": "dailyLights",
+    "ski_bag": "skiBag",
+    "four_wheel_steering": "fourWheelsDriving",
+    "headlight_washers": "frontLightWipers",
+    "camera_360": "camera360",
+    "factory_child_seat": "factoryChildSeat",
+    "touchscreen": "touchScreen",
+    "leather_steering_wheel": "leatherSteeringWheel",
+    "wood_leather_steering_wheel": "leatherWoodSteeringWheel",
+    "heated_steering_wheel": "heatingSteeringWheel",
+    "power_trunk_closing": "electricTrunkClose",
+    "rear_window_curtains": "backWindowCurtains",
+    "soft_close_doors": "doorAttractionOnClose",
+    "usb": "usb",
+    "keyless_start": "keylessIgnition",
+    "hard_disk": "hardDisk",
+    "ventilated_seats": "seatVentilation",
+    "air_suspension": "airSuspension",
+    "ambient_lighting": "ambientLight",
+    "subwoofer": "subwoofer",
+    "mp3": "mp3",
+    "digital_radio": "digitalRadio",
+    "power_outlet_12v": "powerOutlet12v",
+    "power_trunk_opening": "electricTrunkOpen",
+    "differential_lock": "differentialLock",
+    "ski_hatch": "skiHatch",
+    "steering_wheel_height_adjustment": "adjustableHeightSteeringWheel",
+    "cooled_glovebox": "coolingStorage",
+    "cup_holders": "cupHolders",
+    "paddle_shifters": "paddleShifters",
+    "mirror_tilt_in_reverse": "tiltingDoorsReverseMirrors",
+    "auto_dimming_mirror": "autoDimmingMirror",
+    "spare_wheel": "spareWheel",
+    "tire_pressure_monitor": "lowTirePressureIndicator",
+    "ceramic_brakes": "ceramicBrakes",
+    "electronic_parking_brake": "electricHandBrake",
+    "hill_start_assist": "hsa",
+    "aux_input": "aux",
+    "drive_mode_selector": "drivingModes",
+    "wireless_phone_charging": "wirelessChargingPad",
+    "apple_carplay": "appleCarPlay",
+    "android_auto": "androidAuto",
+    "autonomous_driving": "autonomousDrive",
+    "digital_instrument_cluster": "virtualCockpit",
+    "matrix_headlights": "matrixLights",
+}
+
 
 def _extract_next_data(html: str) -> dict:
     match = _NEXT_DATA_RE.search(html)
@@ -64,14 +213,20 @@ class PolovniAutomobiliSource:
         delay: float | None = None,
         jitter: float | None = None,
         network_error_retry_delay: float | None = None,
+        newest_first: bool = False,
     ):
         """`delay`/`jitter`/`network_error_retry_delay` override app/config.py's
         scrape_request_* defaults — app/scraping/pipeline.py's run_scrape passes the current
         admin-editable values from app/scraping/rate_limit.py here. Left unset (e.g. by a direct
         caller/test), each falls back to its Settings default.
+
+        `newest_first` is for a deliberately short crawl (a few pages of a much longer result
+        list, like a SAVED_SEARCH_REFRESH): see build_search_url on why that has to read the
+        *newest* pages, not the stalest ones.
         """
         self.timeout = timeout
         self.max_pages = max_pages
+        self.newest_first = newest_first
         self._outcome_sink = outcome_sink
         if fetcher is not None:
             self.fetcher = fetcher
@@ -100,7 +255,15 @@ class PolovniAutomobiliSource:
         # count in `listings`). renew_date_asc sorts stalest-renewed-first, so new posts and
         # renews only ever get appended at the tail (a page we haven't reached yet) instead of
         # prepended at page 1 — pages already crawled stay stable underneath us.
-        params: list[tuple[str, str]] = [("page", str(page)), ("sort", "renew_date_asc")]
+        #
+        # That only suits a crawl that reads *every* page. A short one (max_pages of a longer
+        # result list, e.g. a 5-page SAVED_SEARCH_REFRESH) reading stalest-first never reaches the
+        # tail where new posts land: verified live 2026-10-12, page 1 of a 38-page BMW search was
+        # last renewed a month earlier and the newest ads were on page 38. `newest_first` flips it
+        # (renew_date_desc, same order as the site's default on page 1) so those pages are the
+        # ones that actually changed since the previous refresh.
+        sort = "renew_date_desc" if self.newest_first else "renew_date_asc"
+        params: list[tuple[str, str]] = [("page", str(page)), ("sort", sort)]
         if query.make:
             params.append(("brand", query.make))
         for model in query.models or []:
@@ -136,6 +299,23 @@ class PolovniAutomobiliSource:
             code = _FUEL_CODE_BY_NORMALIZED.get(fuel)
             if code is not None:
                 params.append(("fuel[]", str(code)))
+        # Without these the site returns every body/drive/... for the brand, and a crawl capped at
+        # max_pages (5 for a SAVED_SEARCH_REFRESH) only ever sees a small, unrelated slice of it —
+        # a "BMW wagon/sedan 4x4" saved search used to crawl plain `brand=BMW`.
+        for name, values, facets in (
+            ("drive[]", query.drive_types, _DRIVE_FACET_BY_NORMALIZED),
+            ("chassis[]", query.body_types, _CHASSIS_FACET_BY_NORMALIZED),
+            ("gearBox[]", query.transmissions, _GEARBOX_FACET_BY_NORMALIZED),
+            ("interiorMaterial[]", query.interior_materials, _INTERIOR_MATERIAL_FACET_BY_NORMALIZED),
+            ("airCondition[]", query.air_conditions, _AIR_CONDITION_FACET_BY_NORMALIZED),
+            ("seats[]", query.seats, _SEATS_FACET_BY_NORMALIZED),
+        ):
+            for value in values or []:
+                params.extend((name, facet) for facet in facets.get(value, ()))
+        for item in query.equipment or []:
+            equipment_facet = _EQUIPMENT_FACET_BY_NORMALIZED.get(item)
+            if equipment_facet is not None:
+                params.append((equipment_facet, "true"))
         return f"{BASE_URL}/auto-oglasi/pretraga?{urlencode(params, doseq=True)}"
 
     def parse_search_page(self, html: str) -> tuple[list[SourceListing], int]:
