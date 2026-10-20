@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import i18n, { intlLocale } from '../i18n'
 import { useQuery } from '@tanstack/react-query'
 import { EmptyState, ErrorState, LoadingState } from '../components/StateMessage'
 import {
@@ -11,53 +13,30 @@ import {
 } from '../lib/api'
 import { describeQuery, type SearchQuery } from '../lib/search'
 
-const STATUS_OPTIONS: { value: ScrapeJobStatus | ''; label: string }[] = [
-  { value: '', label: 'Все статусы' },
-  { value: 'pending', label: 'В очереди' },
-  { value: 'running', label: 'Выполняется' },
-  { value: 'completed', label: 'Завершено' },
-  { value: 'partial', label: 'Частично' },
-  { value: 'failed', label: 'Ошибка' },
-  { value: 'cancelled', label: 'Отменено' },
-]
+const STATUS_VALUES: (ScrapeJobStatus | '')[] = ['', 'pending', 'running', 'completed', 'partial', 'failed', 'cancelled']
 
 // Only types the pipeline actually gives distinct behavior to are offered here — the rest
 // (listing_refresh, saved_search_refresh, market_refresh) are declared on the backend for later
 // phases but aren't wired into run_scrape yet, so scheduling them would silently behave like a
 // plain search.
-const SCHEDULABLE_JOB_TYPES: { value: ScrapeJobType; label: string; hint: string }[] = [
-  { value: 'search', label: 'Поиск по фильтру', hint: 'Обновляет объявления, попадающие под фильтр ниже.' },
-  {
-    value: 'full_source_refresh',
-    label: 'Полное обновление источника',
-    hint: 'Обходит источник целиком (без фильтра) и помечает пропавшие объявления как REMOVED.',
-  },
-]
-
-const JOB_TYPE_LABELS: Record<ScrapeJobType, string> = {
-  search: 'Поиск по фильтру',
-  full_source_refresh: 'Полное обновление источника',
-  listing_refresh: 'Обновление объявления',
-  saved_search_refresh: 'Обновление сохранённого поиска',
-  market_refresh: 'Обновление рынка',
-}
+const SCHEDULABLE_JOB_TYPES: ScrapeJobType[] = ['search', 'full_source_refresh']
 
 const RETRYABLE = new Set<ScrapeJobStatus>(['failed', 'cancelled'])
 const CANCELLABLE = new Set<ScrapeJobStatus>(['pending', 'running'])
 
 function formatTimestamp(iso: string | null): string {
   if (!iso) return '—'
-  return new Date(iso).toLocaleString('ru-RU')
+  return new Date(iso).toLocaleString(intlLocale())
 }
 
 // job.query is {"search_query": SearchQuery, "max_pages": number} — see encode_job_query in
 // app/scraping/schemas.py.
 function describeJobQuery(query: Record<string, unknown> | null): string {
-  if (!query) return 'Все объявления'
+  if (!query) return i18n.t('query.all')
   const searchQuery = (query.search_query as SearchQuery | undefined) ?? {}
   const maxPages = typeof query.max_pages === 'number' ? query.max_pages : undefined
   const filters = describeQuery(searchQuery)
-  return maxPages ? `${filters} (до ${maxPages} стр.)` : filters
+  return maxPages ? i18n.t('admin.upToPages', { filters, pages: maxPages }) : filters
 }
 
 function describeJobStats(stats: Record<string, unknown> | null): string {
@@ -67,7 +46,7 @@ function describeJobStats(stats: Record<string, unknown> | null): string {
   const created = s.listings_created ?? 0
   const updated = s.listings_updated ?? 0
   const removed = s.listings_removed ?? 0
-  const parts = [`всего ${seen}, новых ${created}, обновлено ${updated}, удалено ${removed}`]
+  const parts = [i18n.t('admin.stats', { seen, created, updated, removed })]
 
   const outcomes = Object.entries(s.outcome_counts ?? {}).filter(([, count]) => count > 0)
   if (outcomes.length > 0) {
@@ -83,6 +62,7 @@ function describeJobStats(stats: Record<string, unknown> | null): string {
 // local draft state can be initialized directly from the `initial` prop (useState(initial)) once
 // the query has data, instead of syncing query -> state with an effect.
 function RateLimitForm({ initial }: { initial: ScrapeRateLimitOut }) {
+  const { t } = useTranslation()
   const [form, setForm] = useState(initial)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
@@ -97,7 +77,7 @@ function RateLimitForm({ initial }: { initial: ScrapeRateLimitOut }) {
       setForm(updated)
       setSavedAt(Date.now())
     } catch (err) {
-      setSaveError(err instanceof ApiError ? err.message : 'Не удалось сохранить настройки')
+      setSaveError(err instanceof ApiError ? err.message : t('admin.saveSettingsFailed'))
     } finally {
       setIsSaving(false)
     }
@@ -108,7 +88,7 @@ function RateLimitForm({ initial }: { initial: ScrapeRateLimitOut }) {
       <form onSubmit={handleSave} className="flex flex-wrap items-end gap-3">
         <div>
           <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="rl-delay">
-            Задержка, сек
+            {t('admin.delay')}
           </label>
           <input
             id="rl-delay"
@@ -122,7 +102,7 @@ function RateLimitForm({ initial }: { initial: ScrapeRateLimitOut }) {
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="rl-jitter">
-            Разброс (±), сек
+            {t('admin.jitter')}
           </label>
           <input
             id="rl-jitter"
@@ -136,7 +116,7 @@ function RateLimitForm({ initial }: { initial: ScrapeRateLimitOut }) {
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="rl-retry">
-            Retry при обрыве, сек
+            {t('admin.retryDelay')}
           </label>
           <input
             id="rl-retry"
@@ -153,9 +133,9 @@ function RateLimitForm({ initial }: { initial: ScrapeRateLimitOut }) {
           disabled={isSaving}
           className="rounded-md bg-slate-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
         >
-          {isSaving ? 'Сохраняем…' : 'Сохранить'}
+          {isSaving ? t('admin.saving') : t('admin.save')}
         </button>
-        {savedAt && !saveError && <span className="text-xs text-emerald-600">Сохранено</span>}
+        {savedAt && !saveError && <span className="text-xs text-emerald-600">{t('admin.saved')}</span>}
       </form>
       {saveError && <p className="mt-2 text-sm text-red-600">{saveError}</p>}
     </>
@@ -166,6 +146,7 @@ function RateLimitForm({ initial }: { initial: ScrapeRateLimitOut }) {
 // _RequestPacer) — держится в БД (ScrapeRateLimit), поэтому меняется здесь без деплоя и сразу
 // действует на все новые задачи (уже запущенные задачи донашивают старое значение).
 function RateLimitSettings() {
+  const { t } = useTranslation()
   const rateLimitQuery = useQuery({
     queryKey: ['admin', 'scrape-rate-limit'],
     queryFn: scrapeApi.getRateLimit,
@@ -173,16 +154,14 @@ function RateLimitSettings() {
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4">
-      <h2 className="mb-1 text-sm font-medium text-slate-900">Скорость парсинга</h2>
+      <h2 className="mb-1 text-sm font-medium text-slate-900">{t('admin.speedTitle')}</h2>
       <p className="mb-3 text-sm text-slate-600">
-        Пауза между запросами к источнику внутри одной задачи. Меньшие значения — быстрее обход
-        (12 тыс. страниц при 0.8с ≈ 2.5–3 часа вместо 7–8), но выше риск блокировки и больше
-        расход прокси-квоты при срабатывании защиты источника.
+        {t('admin.speedIntro')}
       </p>
 
       {rateLimitQuery.isLoading && <LoadingState />}
       {rateLimitQuery.isError && (
-        <ErrorState message="Не удалось загрузить настройки" onRetry={() => rateLimitQuery.refetch()} />
+        <ErrorState message={t('admin.loadSettingsFailed')} onRetry={() => rateLimitQuery.refetch()} />
       )}
       {rateLimitQuery.data && <RateLimitForm initial={rateLimitQuery.data} />}
     </div>
@@ -190,6 +169,7 @@ function RateLimitSettings() {
 }
 
 export function AdminJobsPage() {
+  const { t } = useTranslation()
   const [statusFilter, setStatusFilter] = useState<ScrapeJobStatus | ''>('')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
@@ -232,7 +212,7 @@ export function AdminJobsPage() {
       setMake('')
       await jobsQuery.refetch()
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : 'Не удалось создать задачу')
+      setFormError(err instanceof ApiError ? err.message : t('admin.createJobFailed'))
     } finally {
       setIsSubmitting(false)
     }
@@ -274,7 +254,7 @@ export function AdminJobsPage() {
       setScheduleMake('')
       await schedulesQuery.refetch()
     } catch (err) {
-      setScheduleFormError(err instanceof ApiError ? err.message : 'Не удалось создать расписание')
+      setScheduleFormError(err instanceof ApiError ? err.message : t('admin.createScheduleFailed'))
     } finally {
       setIsCreatingSchedule(false)
     }
@@ -303,19 +283,19 @@ export function AdminJobsPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-xl font-semibold text-slate-900">Задачи парсинга</h1>
-        <p className="mt-1 text-sm text-slate-600">Создание и управление задачами сбора объявлений.</p>
+        <h1 className="text-xl font-semibold text-slate-900">{t('admin.title')}</h1>
+        <p className="mt-1 text-sm text-slate-600">{t('admin.intro')}</p>
       </div>
 
       <RateLimitSettings />
 
       <form onSubmit={handleCreate} className="rounded-lg border border-slate-200 bg-white p-4">
-        <h2 className="mb-3 text-sm font-medium text-slate-900">Новая задача</h2>
+        <h2 className="mb-3 text-sm font-medium text-slate-900">{t('admin.newJob')}</h2>
         {formError && <p className="mb-3 text-sm text-red-600">{formError}</p>}
         <div className="flex flex-wrap items-end gap-3">
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="job-source">
-              Источник
+              {t('admin.source')}
             </label>
             <select
               id="job-source"
@@ -328,7 +308,7 @@ export function AdminJobsPage() {
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="job-make">
-              Марка (опционально)
+              {t('admin.makeOptional')}
             </label>
             <input
               id="job-make"
@@ -340,7 +320,7 @@ export function AdminJobsPage() {
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="job-max-pages">
-              Макс. страниц
+              {t('admin.maxPages')}
             </label>
             <input
               id="job-max-pages"
@@ -356,7 +336,7 @@ export function AdminJobsPage() {
             disabled={isSubmitting}
             className="rounded-md bg-slate-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
           >
-            {isSubmitting ? 'Создаём…' : 'Запустить'}
+            {isSubmitting ? t('admin.creating') : t('admin.run')}
           </button>
         </div>
       </form>
@@ -364,22 +344,22 @@ export function AdminJobsPage() {
       <div>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <h2 className="text-sm font-medium text-slate-900">Все задачи</h2>
+            <h2 className="text-sm font-medium text-slate-900">{t('admin.allJobs')}</h2>
             <button
               type="button"
               onClick={() => setJobsCollapsed((prev) => !prev)}
               className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100"
             >
-              {jobsCollapsed ? 'Развернуть' : 'Свернуть'}
+              {jobsCollapsed ? t('admin.expand') : t('admin.collapse')}
             </button>
             <a href="#schedules" className="text-xs font-medium text-slate-500 underline hover:text-slate-700">
-              К расписаниям ↓
+              {t('admin.toSchedules')}
             </a>
           </div>
           <div className="flex flex-wrap items-end gap-3">
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="job-date-from">
-                С даты
+                {t('admin.dateFrom')}
               </label>
               <input
                 id="job-date-from"
@@ -391,7 +371,7 @@ export function AdminJobsPage() {
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="job-date-to">
-                По дату
+                {t('admin.dateTo')}
               </label>
               <input
                 id="job-date-to"
@@ -406,9 +386,9 @@ export function AdminJobsPage() {
               onChange={(e) => setStatusFilter(e.target.value as ScrapeJobStatus | '')}
               className="rounded-md border border-slate-300 px-3 py-1.5 text-sm"
             >
-              {STATUS_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
+              {STATUS_VALUES.map((value) => (
+                <option key={value} value={value}>
+                  {t(`admin.statuses.${value || 'all'}`)}
                 </option>
               ))}
             </select>
@@ -419,29 +399,29 @@ export function AdminJobsPage() {
           <>
             {jobsQuery.isLoading && <LoadingState />}
             {jobsQuery.isError && (
-              <ErrorState message="Не удалось загрузить задачи" onRetry={() => jobsQuery.refetch()} />
+              <ErrorState message={t('admin.loadJobsFailed')} onRetry={() => jobsQuery.refetch()} />
             )}
-            {jobsQuery.isSuccess && jobsQuery.data.length === 0 && <EmptyState message="Задач пока нет" />}
+            {jobsQuery.isSuccess && jobsQuery.data.length === 0 && <EmptyState message={t('admin.noJobs')} />}
 
             {jobsQuery.isSuccess && jobsQuery.data.length > 0 && (
               <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
                 <table className="w-full text-left text-sm">
                   <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500">
                     <tr>
-                      <th className="px-4 py-2">Тип</th>
-                      <th className="px-4 py-2">Параметры</th>
-                      <th className="px-4 py-2">Статус</th>
-                      <th className="px-4 py-2">Начало</th>
-                      <th className="px-4 py-2">Конец</th>
-                      <th className="px-4 py-2">Результат</th>
-                      <th className="px-4 py-2">Ошибка</th>
+                      <th className="px-4 py-2">{t('admin.colType')}</th>
+                      <th className="px-4 py-2">{t('admin.colParams')}</th>
+                      <th className="px-4 py-2">{t('admin.colStatus')}</th>
+                      <th className="px-4 py-2">{t('admin.colStart')}</th>
+                      <th className="px-4 py-2">{t('admin.colEnd')}</th>
+                      <th className="px-4 py-2">{t('admin.colResult')}</th>
+                      <th className="px-4 py-2">{t('admin.colError')}</th>
                       <th className="px-4 py-2" />
                     </tr>
                   </thead>
                   <tbody>
                     {jobsQuery.data.map((job) => (
                       <tr key={job.id} className="border-b border-slate-100 last:border-0">
-                        <td className="px-4 py-2 text-slate-700">{JOB_TYPE_LABELS[job.job_type]}</td>
+                        <td className="px-4 py-2 text-slate-700">{t(`admin.jobTypes.${job.job_type}`)}</td>
                         <td className="px-4 py-2 max-w-xs text-slate-500">{describeJobQuery(job.query)}</td>
                         <td className="px-4 py-2 text-slate-700">{job.status}</td>
                         <td className="px-4 py-2 text-slate-500">{formatTimestamp(job.started_at)}</td>
@@ -458,7 +438,7 @@ export function AdminJobsPage() {
                               onClick={() => handleCancel(job.id)}
                               className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
                             >
-                              Отменить
+                              {t('admin.cancel')}
                             </button>
                           )}
                           {RETRYABLE.has(job.status) && (
@@ -468,7 +448,7 @@ export function AdminJobsPage() {
                               onClick={() => handleRetry(job.id)}
                               className="ml-2 rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
                             >
-                              Повторить
+                              {t('admin.retry')}
                             </button>
                           )}
                         </td>
@@ -483,9 +463,9 @@ export function AdminJobsPage() {
       </div>
 
       <div id="schedules" className="scroll-mt-4">
-        <h2 className="mb-1 text-sm font-medium text-slate-900">Расписания</h2>
+        <h2 className="mb-1 text-sm font-medium text-slate-900">{t('admin.schedules')}</h2>
         <p className="mb-3 text-sm text-slate-600">
-          Регулярный запуск задачи с заданным интервалом — держит данные актуальными без ручных запусков.
+          {t('admin.schedulesIntro')}
         </p>
 
         <form onSubmit={handleCreateSchedule} className="mb-4 rounded-lg border border-slate-200 bg-white p-4">
@@ -493,7 +473,7 @@ export function AdminJobsPage() {
           <div className="flex flex-wrap items-end gap-3">
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="schedule-job-type">
-                Тип задачи
+                {t('admin.jobType')}
               </label>
               <select
                 id="schedule-job-type"
@@ -501,16 +481,16 @@ export function AdminJobsPage() {
                 onChange={(e) => setScheduleJobType(e.target.value as ScrapeJobType)}
                 className="rounded-md border border-slate-300 px-3 py-1.5 text-sm"
               >
-                {SCHEDULABLE_JOB_TYPES.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
+                {SCHEDULABLE_JOB_TYPES.map((type) => (
+                  <option key={type} value={type}>
+                    {t(`admin.jobTypes.${type}`)}
                   </option>
                 ))}
               </select>
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="schedule-make">
-                Марка (опционально)
+                {t('admin.makeOptional')}
               </label>
               <input
                 id="schedule-make"
@@ -523,7 +503,7 @@ export function AdminJobsPage() {
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="schedule-max-pages">
-                Макс. страниц
+                {t('admin.maxPages')}
               </label>
               <input
                 id="schedule-max-pages"
@@ -536,7 +516,7 @@ export function AdminJobsPage() {
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="schedule-interval">
-                Интервал, часы
+                {t('admin.intervalHours')}
               </label>
               <input
                 id="schedule-interval"
@@ -553,20 +533,20 @@ export function AdminJobsPage() {
               disabled={isCreatingSchedule}
               className="rounded-md bg-slate-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
             >
-              {isCreatingSchedule ? 'Создаём…' : 'Добавить расписание'}
+              {isCreatingSchedule ? t('admin.creating') : t('admin.addSchedule')}
             </button>
           </div>
           <p className="mt-2 text-xs text-slate-500">
-            {SCHEDULABLE_JOB_TYPES.find((opt) => opt.value === scheduleJobType)?.hint}
+            {t(`admin.jobHints.${scheduleJobType}`)}
           </p>
         </form>
 
         {schedulesQuery.isLoading && <LoadingState />}
         {schedulesQuery.isError && (
-          <ErrorState message="Не удалось загрузить расписания" onRetry={() => schedulesQuery.refetch()} />
+          <ErrorState message={t('admin.loadSchedulesFailed')} onRetry={() => schedulesQuery.refetch()} />
         )}
         {schedulesQuery.isSuccess && schedulesQuery.data.length === 0 && (
-          <EmptyState message="Расписаний пока нет" />
+          <EmptyState message={t('admin.noSchedules')} />
         )}
 
         {schedulesQuery.isSuccess && schedulesQuery.data.length > 0 && (
@@ -574,20 +554,20 @@ export function AdminJobsPage() {
             <table className="w-full text-left text-sm">
               <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500">
                 <tr>
-                  <th className="px-4 py-2">Тип</th>
-                  <th className="px-4 py-2">Интервал</th>
-                  <th className="px-4 py-2">Статус</th>
-                  <th className="px-4 py-2">Следующий запуск</th>
-                  <th className="px-4 py-2">Последний запуск</th>
+                  <th className="px-4 py-2">{t('admin.colType')}</th>
+                  <th className="px-4 py-2">{t('admin.colInterval')}</th>
+                  <th className="px-4 py-2">{t('admin.colStatus')}</th>
+                  <th className="px-4 py-2">{t('admin.colNext')}</th>
+                  <th className="px-4 py-2">{t('admin.colLast')}</th>
                   <th className="px-4 py-2" />
                 </tr>
               </thead>
               <tbody>
                 {schedulesQuery.data.map((schedule) => (
                   <tr key={schedule.id} className="border-b border-slate-100 last:border-0">
-                    <td className="px-4 py-2 text-slate-700">{JOB_TYPE_LABELS[schedule.job_type]}</td>
-                    <td className="px-4 py-2 text-slate-700">каждые {schedule.interval_minutes / 60} ч</td>
-                    <td className="px-4 py-2 text-slate-700">{schedule.enabled ? 'активно' : 'приостановлено'}</td>
+                    <td className="px-4 py-2 text-slate-700">{t(`admin.jobTypes.${schedule.job_type}`)}</td>
+                    <td className="px-4 py-2 text-slate-700">{t('admin.everyHours', { hours: schedule.interval_minutes / 60 })}</td>
+                    <td className="px-4 py-2 text-slate-700">{schedule.enabled ? t('admin.enabled') : t('admin.paused')}</td>
                     <td className="px-4 py-2 text-slate-500">{formatTimestamp(schedule.next_run_at)}</td>
                     <td className="px-4 py-2 text-slate-500">{formatTimestamp(schedule.last_run_at)}</td>
                     <td className="px-4 py-2 text-right">
@@ -597,7 +577,7 @@ export function AdminJobsPage() {
                         onClick={() => handleToggleSchedule(schedule.id, schedule.enabled)}
                         className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
                       >
-                        {schedule.enabled ? 'Приостановить' : 'Возобновить'}
+                        {schedule.enabled ? t('admin.pause') : t('admin.resume')}
                       </button>
                       <button
                         type="button"
@@ -605,7 +585,7 @@ export function AdminJobsPage() {
                         onClick={() => handleDeleteSchedule(schedule.id)}
                         className="ml-2 rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
                       >
-                        Удалить
+                        {t('admin.delete')}
                       </button>
                     </td>
                   </tr>

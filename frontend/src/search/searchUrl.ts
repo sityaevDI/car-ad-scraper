@@ -1,6 +1,6 @@
 import type { SavedSearchView } from '../lib/savedSearches'
 import type { GroupField, SearchQuery } from '../lib/search'
-import { DEFAULT_GROUP_BY, FLAT_SORT_OPTIONS, GROUP_FIELD_LABELS, GROUP_SORT_OPTIONS } from '../lib/search'
+import { DEFAULT_GROUP_BY, FLAT_SORT_OPTIONS, GROUP_FIELDS, GROUP_SORT_OPTIONS } from '../lib/search'
 
 // The search page's state lives in the URL (`/?make=BMW&group_by=make&sort=count_desc&page=2`), so
 // it is per-tab by construction, survives reloads, works with the browser's back/forward, and can
@@ -73,7 +73,7 @@ export function hasActiveFilters(query: SearchQuery): boolean {
 }
 
 function isGroupField(value: string): value is GroupField {
-  return value in GROUP_FIELD_LABELS
+  return (GROUP_FIELDS as readonly string[]).includes(value)
 }
 
 // A query that came from the API (a saved search) is SearchQuery.model_dump(): every unset field is

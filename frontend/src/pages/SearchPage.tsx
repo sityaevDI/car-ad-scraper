@@ -1,5 +1,6 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useLocation, useSearchParams } from 'react-router-dom'
 import { useCurrentUser } from '../auth/useCurrentUser'
 import { ListingCard } from '../components/ListingCard'
@@ -28,6 +29,7 @@ import { ViewControls } from '../search/ViewControls'
 import { clearViewPreferences, loadViewPreferences, saveViewPreferences } from '../search/viewPreferences'
 
 export function SearchPage() {
+  const { t } = useTranslation()
   const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const justRegistered = Boolean((location.state as { justRegistered?: boolean } | null)?.justRegistered)
@@ -123,7 +125,7 @@ export function SearchPage() {
       setSaveName('')
       setSaveSuccess(true)
     } catch (err) {
-      setSaveError(err instanceof ApiError ? err.message : 'Не удалось сохранить поиск')
+      setSaveError(err instanceof ApiError ? err.message : t('search.saveFailed'))
     } finally {
       setIsSavingSearch(false)
     }
@@ -132,7 +134,7 @@ export function SearchPage() {
   return (
     <div className="space-y-4">
       {justRegistered && (
-        <SuccessText>Аккаунт создан. Проверьте почту и подтвердите email, чтобы получить полный доступ.</SuccessText>
+        <SuccessText>{t('search.registered')}</SuccessText>
       )}
 
       <SearchFilters
@@ -152,7 +154,7 @@ export function SearchPage() {
           <input
             value={saveName}
             onChange={(e) => setSaveName(e.target.value)}
-            placeholder="Название сохранённого поиска"
+            placeholder={t('search.saveName')}
             required
             className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm"
           />
@@ -161,10 +163,10 @@ export function SearchPage() {
             disabled={isSavingSearch}
             className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
           >
-            {isSavingSearch ? 'Сохраняем…' : 'Сохранить поиск с фильтрами и группировкой'}
+            {isSavingSearch ? t('search.saving') : t('search.saveSearch')}
           </button>
           {saveError && <span className="text-sm text-red-600">{saveError}</span>}
-          {saveSuccess && !saveError && <span className="text-sm text-emerald-600">Сохранено ✓</span>}
+          {saveSuccess && !saveError && <span className="text-sm text-emerald-600">{t('search.saved')}</span>}
         </form>
       )}
 
@@ -183,11 +185,11 @@ export function SearchPage() {
         <LoadingState />
       ) : query.isError ? (
         <ErrorState
-          message={query.error instanceof ApiError ? query.error.message : 'Не удалось загрузить результаты'}
+          message={query.error instanceof ApiError ? query.error.message : t('search.loadFailed')}
           onRetry={() => query.refetch()}
         />
       ) : isEmpty ? (
-        <EmptyState message="Ничего не найдено — попробуйте ослабить фильтры" />
+        <EmptyState message={t('search.empty')} />
       ) : isGrouped ? (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {/* The URL is part of the key so GroupCard remounts and collapses whenever the filters,

@@ -1,25 +1,23 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { EmptyState, ErrorState } from '../components/StateMessage'
+import i18n, { intlLocale } from '../i18n'
 import { formatDate } from '../lib/format'
 import { type RemovalBreakdownRow, type RemovalMetrics, type RemovalPeriod, marketApi } from '../lib/market'
 import { DailyBarChart } from '../market/DailyBarChart'
 import { useVehicleMakes } from '../search/useVehicleMakes'
 
-const PERIODS: { value: RemovalPeriod; label: string; window: string }[] = [
-  { value: 'day', label: 'День', window: 'за последние сутки' },
-  { value: 'week', label: 'Неделя', window: 'за последние 7 дней' },
-  { value: 'month', label: 'Месяц', window: 'за последние 30 дней' },
-]
+const PERIODS: RemovalPeriod[] = ['day', 'week', 'month']
 
-const numberFormat = new Intl.NumberFormat('ru-RU')
+const numberFormat = { format: (value: number) => new Intl.NumberFormat(intlLocale()).format(value) }
 
 function formatEuro(value: number | null): string {
   return value === null ? '—' : `${numberFormat.format(value)} €`
 }
 
 function formatDays(value: number | null): string {
-  return value === null ? '—' : `${numberFormat.format(Math.round(value))} дн.`
+  return value === null ? '—' : i18n.t('stats.days', { value: numberFormat.format(Math.round(value)) })
 }
 
 function formatShare(value: number | null): string {
@@ -27,10 +25,10 @@ function formatShare(value: number | null): string {
 }
 
 function describeDelta(current: RemovalMetrics, previous: RemovalMetrics | null, periodLabel: string): string {
-  if (!previous || previous.removed_count === 0) return 'Нет данных для сравнения с прошлым периодом'
+  if (!previous || previous.removed_count === 0) return i18n.t('stats.noCompare')
   const pct = Math.round(((current.removed_count - previous.removed_count) / previous.removed_count) * 100)
   const sign = pct > 0 ? '+' : ''
-  return `${sign}${pct}% к предыдущему периоду (${periodLabel}: ${numberFormat.format(previous.removed_count)})`
+  return i18n.t('stats.delta', { sign, pct, period: periodLabel, prev: numberFormat.format(previous.removed_count) })
 }
 
 function StatTile({ label, value, hint }: { label: string; value: string; hint?: string }) {
@@ -44,17 +42,18 @@ function StatTile({ label, value, hint }: { label: string; value: string; hint?:
 }
 
 function BreakdownTable({ rows, byModel }: { rows: RemovalBreakdownRow[]; byModel: boolean }) {
+  const { t } = useTranslation()
   const max = Math.max(1, ...rows.map((row) => row.removed_count))
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
       <table className="w-full text-left text-sm">
         <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
           <tr>
-            <th className="px-4 py-2 font-medium">{byModel ? 'Модель' : 'Марка'}</th>
-            <th className="px-4 py-2 font-medium">Снято</th>
-            <th className="px-4 py-2 font-medium">Срок на рынке</th>
-            <th className="px-4 py-2 font-medium">Медианная цена</th>
-            <th className="px-4 py-2 font-medium">Снижали цену</th>
+            <th className="px-4 py-2 font-medium">{byModel ? t('stats.colModel') : t('stats.colMake')}</th>
+            <th className="px-4 py-2 font-medium">{t('stats.colRemoved')}</th>
+            <th className="px-4 py-2 font-medium">{t('stats.colDays')}</th>
+            <th className="px-4 py-2 font-medium">{t('stats.colMedianPrice')}</th>
+            <th className="px-4 py-2 font-medium">{t('stats.colPriceCut')}</th>
           </tr>
         </thead>
         <tbody>
@@ -84,6 +83,7 @@ function BreakdownTable({ rows, byModel }: { rows: RemovalBreakdownRow[]; byMode
 }
 
 export function RemovedStatsPage() {
+  const { t } = useTranslation()
   const [period, setPeriod] = useState<RemovalPeriod>('week')
   const [make, setMake] = useState('')
   const { makes, isLoading: makesLoading } = useVehicleMakes()
@@ -94,49 +94,46 @@ export function RemovedStatsPage() {
     placeholderData: keepPreviousData,
   })
 
-  const periodInfo = PERIODS.find((p) => p.value === period) ?? PERIODS[1]
   const data = query.data
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900">Статистика снятых объявлений</h1>
+        <h1 className="text-2xl font-semibold text-slate-900">{t('stats.title')}</h1>
         <p className="mt-1 text-sm text-slate-600">
-          Сколько объявлений пропало с площадки, как долго они висели и как менялась цена перед этим.
+          {t('stats.intro')}
         </p>
       </div>
 
       <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-        «Снято» — не то же самое, что «продано»: объявление могло исчезнуть, потому что продавец его закрыл. Это
-        оценка спроса, а не подтверждённые продажи. «Срок на рынке» — сколько мы видели объявление, а не сколько оно
-        реально висело на площадке.
+        {t('stats.disclaimer')}
       </div>
 
       <div className="flex flex-wrap items-end gap-4">
         <div className="inline-flex overflow-hidden rounded-md border border-slate-300 bg-white text-sm shadow-sm">
           {PERIODS.map((p) => (
             <button
-              key={p.value}
+              key={p}
               type="button"
-              onClick={() => setPeriod(p.value)}
-              aria-pressed={period === p.value}
+              onClick={() => setPeriod(p)}
+              aria-pressed={period === p}
               className={`px-4 py-1.5 font-medium ${
-                period === p.value ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'
+                period === p ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'
               }`}
             >
-              {p.label}
+              {t(`stats.periods.${p}.label`)}
             </button>
           ))}
         </div>
         <label className="block">
-          <span className="mb-1 block text-xs font-medium text-slate-600">Марка</span>
+          <span className="mb-1 block text-xs font-medium text-slate-600">{t('stats.make')}</span>
           <select
             className="rounded-md border border-slate-300 px-2.5 py-1.5 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
             disabled={makesLoading}
             value={make}
             onChange={(e) => setMake(e.target.value)}
           >
-            <option value="">Все марки</option>
+            <option value="">{t('stats.allMakes')}</option>
             {Object.keys(makes)
               .sort()
               .map((name) => (
@@ -151,44 +148,48 @@ export function RemovedStatsPage() {
       {query.isLoading ? (
         <div className="h-64 animate-pulse rounded-lg border border-slate-200 bg-slate-100" />
       ) : query.isError ? (
-        <ErrorState message="Не удалось загрузить статистику." onRetry={() => query.refetch()} />
+        <ErrorState message={t('stats.loadFailed')} onRetry={() => query.refetch()} />
       ) : !data || !data.current || !data.as_of ? (
-        <EmptyState message="Статистика ещё не рассчитана — она обновляется два раза в день." />
+        <EmptyState message={t('stats.notComputed')} />
       ) : (
         <>
           <p className="text-sm text-slate-600">
-            {make || 'Все марки'}, {periodInfo.window} по {formatDate(data.as_of)} (полные сутки, UTC).
+            {t('stats.summary', {
+              make: make || t('stats.allMakes'),
+              window: t(`stats.periods.${period}.window`),
+              date: formatDate(data.as_of),
+            })}
           </p>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatTile
-              label="Снято объявлений"
+              label={t('stats.tileRemoved')}
               value={numberFormat.format(data.current.removed_count)}
-              hint={describeDelta(data.current, data.previous, periodInfo.label.toLowerCase())}
+              hint={describeDelta(data.current, data.previous, t(`stats.periods.${period}.label`).toLowerCase())}
             />
             <StatTile
-              label="Медианный срок на рынке"
+              label={t('stats.tileDays')}
               value={formatDays(data.current.median_days_on_market)}
-              hint="От первого до последнего момента, когда мы видели объявление"
+              hint={t('stats.tileDaysHint')}
             />
             <StatTile
-              label="Медианная цена при снятии"
+              label={t('stats.tileMedianPrice')}
               value={formatEuro(data.current.median_price_at_removal)}
             />
             <StatTile
-              label="Снижали цену до снятия"
+              label={t('stats.tileCut')}
               value={formatShare(data.current.price_cut_share)}
               hint={
                 data.current.median_price_cut_pct === null
                   ? undefined
-                  : `Медианное снижение — ${data.current.median_price_cut_pct}%`
+                  : t('stats.tileCutHint', { pct: data.current.median_price_cut_pct })
               }
             />
           </div>
 
           {data.series.length > 0 && (
             <section>
-              <h2 className="mb-2 text-lg font-semibold text-slate-900">Снятые объявления по дням</h2>
+              <h2 className="mb-2 text-lg font-semibold text-slate-900">{t('stats.byDay')}</h2>
               <div className="rounded-lg border border-slate-200 bg-white p-4">
                 <DailyBarChart series={data.series} />
               </div>
@@ -197,7 +198,7 @@ export function RemovedStatsPage() {
 
           <section>
             <h2 className="mb-2 text-lg font-semibold text-slate-900">
-              {make ? `Модели ${make}` : 'Марки'} — чаще всего снимают
+              {make ? t('stats.topModels', { make }) : t('stats.topMakes')}
             </h2>
             {data.breakdown.length > 0 ? (
               <BreakdownTable rows={data.breakdown} byModel={Boolean(make)} />
@@ -205,8 +206,8 @@ export function RemovedStatsPage() {
               <EmptyState
                 message={
                   make
-                    ? 'Слишком мало снятых объявлений по отдельным моделям — нужно хотя бы 3 на модель.'
-                    : 'За этот период нет снятых объявлений.'
+                    ? t('stats.fewModels')
+                    : t('stats.noneRemoved')
                 }
               />
             )}
@@ -214,7 +215,7 @@ export function RemovedStatsPage() {
 
           {data.computed_at && (
             <p className="text-xs text-slate-500">
-              Обновлено {new Date(data.computed_at).toLocaleString('ru-RU')}
+              {t('stats.updated', { date: new Date(data.computed_at).toLocaleString(intlLocale()) })}
             </p>
           )}
         </>

@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+
 export function LoadingState() {
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -17,6 +19,7 @@ export function EmptyState({ message }: { message: string }) {
 }
 
 export function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
+  const { t } = useTranslation()
   return (
     <div className="rounded-lg border border-red-200 bg-red-50 px-6 py-8 text-center">
       <p className="mb-3 text-sm text-red-700">{message}</p>
@@ -25,7 +28,7 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry: () 
         onClick={onRetry}
         className="rounded-md border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100"
       >
-        Повторить
+        {t('common.retry')}
       </button>
     </div>
   )

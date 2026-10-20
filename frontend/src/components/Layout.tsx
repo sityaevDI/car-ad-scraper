@@ -1,11 +1,14 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link, Outlet, useNavigate } from 'react-router-dom'
 import { useCurrentUser, useInvalidateCurrentUser } from '../auth/useCurrentUser'
 import { authApi } from '../lib/api'
 import { notificationsApi } from '../lib/notifications'
+import { LanguageSwitcher } from './LanguageSwitcher'
 
 export function Layout() {
+  const { t } = useTranslation()
   const { user, isLoading } = useCurrentUser()
   const invalidateCurrentUser = useInvalidateCurrentUser()
   const navigate = useNavigate()
@@ -39,18 +42,18 @@ export function Layout() {
           </Link>
           <nav className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
             <Link to="/market/removed" className="font-medium text-slate-700 hover:text-slate-900">
-              Статистика
+              {t('nav.stats')}
             </Link>
             {isLoading ? null : user ? (
               <>
                 <Link to="/saved-searches" className="font-medium text-slate-700 hover:text-slate-900">
-                  Мои поиски
+                  {t('nav.savedSearches')}
                 </Link>
                 <Link to="/following" className="font-medium text-slate-700 hover:text-slate-900">
-                  Отслеживаемые
+                  {t('nav.following')}
                 </Link>
                 <Link to="/notifications" className="relative font-medium text-slate-700 hover:text-slate-900">
-                  Уведомления
+                  {t('nav.notifications')}
                   {unreadCount > 0 && (
                     <span className="ml-1 rounded-full bg-red-600 px-1.5 py-0.5 text-xs font-semibold text-white">
                       {unreadCount}
@@ -59,13 +62,13 @@ export function Layout() {
                 </Link>
                 {user.role === 'admin' && (
                   <Link to="/admin/jobs" className="font-medium text-slate-700 hover:text-slate-900">
-                    Задачи парсинга
+                    {t('nav.adminJobs')}
                   </Link>
                 )}
                 <span className="text-slate-600">{user.email}</span>
                 {!user.email_verified && (
                   <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
-                    email не подтверждён
+                    {t('nav.emailUnverified')}
                   </span>
                 )}
                 <button
@@ -74,22 +77,23 @@ export function Layout() {
                   disabled={isLoggingOut}
                   className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
                 >
-                  {isLoggingOut ? 'Выходим…' : 'Выйти'}
+                  {isLoggingOut ? t('nav.loggingOut') : t('nav.logout')}
                 </button>
               </>
             ) : (
               <>
                 <Link to="/login" className="font-medium text-slate-700 hover:text-slate-900">
-                  Войти
+                  {t('nav.login')}
                 </Link>
                 <Link
                   to="/register"
                   className="rounded-md bg-slate-900 px-3 py-1.5 font-medium text-white hover:bg-slate-700"
                 >
-                  Регистрация
+                  {t('nav.register')}
                 </Link>
               </>
             )}
+            <LanguageSwitcher />
           </nav>
         </div>
       </header>

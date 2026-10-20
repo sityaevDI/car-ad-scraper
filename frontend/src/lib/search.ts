@@ -1,3 +1,4 @@
+import i18n from '../i18n'
 import { apiFetch } from './client'
 import type { ListingOut } from './listings'
 
@@ -32,8 +33,8 @@ export function describeQuery(query: SearchQuery): string {
   if (Array.isArray(query.models) && query.models.length) parts.push((query.models as string[]).join('/'))
   if (query.year_min || query.year_max) parts.push(`${query.year_min ?? '…'}–${query.year_max ?? '…'}`)
   if (query.price_min || query.price_max) parts.push(`€${query.price_min ?? '…'}–${query.price_max ?? '…'}`)
-  if (query.equipment?.length) parts.push(`+${query.equipment.length} опций`)
-  return parts.length ? parts.join(', ') : 'Все объявления'
+  if (query.equipment?.length) parts.push(i18n.t('query.optionsCount', { count: query.equipment.length }))
+  return parts.length ? parts.join(', ') : i18n.t('query.all')
 }
 
 // Mirrors ALLOWED_GROUP_FIELDS in app/search/service.py.
@@ -48,23 +49,31 @@ export type GroupField =
   | 'interior_material'
   | 'drive_type'
 
-export const GROUP_FIELD_LABELS: Record<GroupField, string> = {
-  make: 'Марка',
-  model: 'Модель',
-  production_year: 'Год',
-  fuel_type: 'Топливо',
-  transmission: 'КПП',
-  engine_volume_cc: 'Объём двигателя',
-  body_type: 'Кузов',
-  interior_material: 'Материал салона',
-  drive_type: 'Привод',
+export const GROUP_FIELDS: readonly GroupField[] = [
+  'make',
+  'model',
+  'production_year',
+  'fuel_type',
+  'transmission',
+  'engine_volume_cc',
+  'body_type',
+  'interior_material',
+  'drive_type',
+]
+
+export function groupFieldLabel(field: GroupField): string {
+  return i18n.t(`groupField.${field}`)
+}
+
+export function sortLabel(value: string): string {
+  return i18n.t(`sort.${value}`, { defaultValue: value })
 }
 
 // Mirrors SearchRequest.group_by's default in app/search/query.py.
 export const DEFAULT_GROUP_BY: GroupField[] = ['make', 'model', 'engine_volume_cc', 'fuel_type', 'transmission']
 
 export function describeGrouping(groupBy: GroupField[]): string {
-  return groupBy.length ? groupBy.map((field) => GROUP_FIELD_LABELS[field]).join(' → ') : 'без группировки'
+  return groupBy.length ? groupBy.map(groupFieldLabel).join(' → ') : i18n.t('query.noGrouping')
 }
 
 export interface SearchRequest {
@@ -101,21 +110,21 @@ export interface SearchResponse {
 
 // Mirrors _FLAT_SORTS in app/search/service.py.
 export const FLAT_SORT_OPTIONS = [
-  { value: 'first_seen_desc', label: 'Сначала новые' },
-  { value: 'price_asc', label: 'Цена: по возрастанию' },
-  { value: 'price_desc', label: 'Цена: по убыванию' },
-  { value: 'mileage_asc', label: 'Пробег: по возрастанию' },
-  { value: 'mileage_desc', label: 'Пробег: по убыванию' },
-  { value: 'year_desc', label: 'Год: сначала новые' },
+  { value: 'first_seen_desc' },
+  { value: 'price_asc' },
+  { value: 'price_desc' },
+  { value: 'mileage_asc' },
+  { value: 'mileage_desc' },
+  { value: 'year_desc' },
 ] as const
 
 // Grouped search only recognizes these three explicitly, else falls back to count_desc — see
 // app/search/service.py._search_grouped.
 export const GROUP_SORT_OPTIONS = [
-  { value: 'count_desc', label: 'Сначала популярные' },
-  { value: 'price_asc', label: 'Цена: по возрастанию' },
-  { value: 'price_desc', label: 'Цена: по убыванию' },
-  { value: 'year_desc', label: 'Год: сначала новые' },
+  { value: 'count_desc' },
+  { value: 'price_asc' },
+  { value: 'price_desc' },
+  { value: 'year_desc' },
 ] as const
 
 export const searchApi = {

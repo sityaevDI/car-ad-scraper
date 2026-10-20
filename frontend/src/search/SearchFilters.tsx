@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+import { optionLabel, type OptionGroup } from '../i18n'
 import type { SearchQuery } from '../lib/search'
 import { useVehicleMakes } from './useVehicleMakes'
 import {
@@ -34,13 +36,14 @@ function RangeField({
   onMinChange: (v: number | undefined) => void
   onMaxChange: (v: number | undefined) => void
 }) {
+  const { t } = useTranslation()
   return (
     <div>
       <span className={labelClass}>{label}</span>
       <div className="flex items-center gap-2">
         <input
           type="number"
-          placeholder="от"
+          placeholder={t('common.from')}
           className={inputClass}
           value={minValue ?? ''}
           onChange={(e) => onMinChange(numOrUndefined(e.target.value))}
@@ -48,7 +51,7 @@ function RangeField({
         <span className="text-slate-400">–</span>
         <input
           type="number"
-          placeholder="до"
+          placeholder={t('common.to')}
           className={inputClass}
           value={maxValue ?? ''}
           onChange={(e) => onMaxChange(numOrUndefined(e.target.value))}
@@ -60,12 +63,14 @@ function RangeField({
 
 function CheckboxGroup({
   label,
+  group,
   options,
   selected,
   onChange,
 }: {
   label: string
-  options: readonly { value: string; label: string }[]
+  group: OptionGroup
+  options: readonly { value: string }[]
   selected: string[] | undefined
   onChange: (next: string[] | undefined) => void
 }) {
@@ -86,7 +91,7 @@ function CheckboxGroup({
               onChange={() => toggle(option.value)}
               className="rounded border-slate-300"
             />
-            {option.label}
+            {optionLabel(group, option.value)}
           </label>
         ))}
       </div>
@@ -109,6 +114,7 @@ export function SearchFilters({
   onReset: () => void
   canReset: boolean
 }) {
+  const { t } = useTranslation()
   const { makes, isLoading: makesLoading } = useVehicleMakes()
   const makeOptions = Object.keys(makes).sort()
   const modelOptions = value.make ? (makes[value.make] ?? []).slice().sort() : []
@@ -123,14 +129,14 @@ export function SearchFilters({
     >
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <span className={labelClass}>Марка</span>
+          <span className={labelClass}>{t('search.make')}</span>
           <select
             className={inputClass}
             disabled={makesLoading}
             value={value.make ?? ''}
             onChange={(e) => onChange({ ...value, make: e.target.value || undefined, models: undefined })}
           >
-            <option value="">Все марки</option>
+            <option value="">{t('search.allMakes')}</option>
             {makeOptions.map((make) => (
               <option key={make} value={make}>
                 {make}
@@ -139,14 +145,14 @@ export function SearchFilters({
           </select>
         </div>
         <div>
-          <span className={labelClass}>Модель</span>
+          <span className={labelClass}>{t('search.model')}</span>
           <select
             className={inputClass}
             disabled={!value.make || modelOptions.length === 0}
             value={value.models?.[0] ?? ''}
             onChange={(e) => onChange({ ...value, models: e.target.value ? [e.target.value] : undefined })}
           >
-            <option value="">Все модели</option>
+            <option value="">{t('search.allModels')}</option>
             {modelOptions.map((model) => (
               <option key={model} value={model}>
                 {model}
@@ -158,42 +164,42 @@ export function SearchFilters({
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <RangeField
-          label="Год"
+          label={t('search.year')}
           minValue={value.year_min}
           maxValue={value.year_max}
           onMinChange={(v) => onChange({ ...value, year_min: v })}
           onMaxChange={(v) => onChange({ ...value, year_max: v })}
         />
         <RangeField
-          label="Цена, €"
+          label={t('search.priceEur')}
           minValue={value.price_min}
           maxValue={value.price_max}
           onMinChange={(v) => onChange({ ...value, price_min: v })}
           onMaxChange={(v) => onChange({ ...value, price_max: v })}
         />
         <RangeField
-          label="Пробег, км"
+          label={t('search.mileageKm')}
           minValue={value.mileage_min}
           maxValue={value.mileage_max}
           onMinChange={(v) => onChange({ ...value, mileage_min: v })}
           onMaxChange={(v) => onChange({ ...value, mileage_max: v })}
         />
         <RangeField
-          label="Объём двигателя, см³"
+          label={t('search.engineVolume')}
           minValue={value.engine_volume_min}
           maxValue={value.engine_volume_max}
           onMinChange={(v) => onChange({ ...value, engine_volume_min: v })}
           onMaxChange={(v) => onChange({ ...value, engine_volume_max: v })}
         />
         <RangeField
-          label="Мощность, л.с."
+          label={t('search.power')}
           minValue={value.power_min}
           maxValue={value.power_max}
           onMinChange={(v) => onChange({ ...value, power_min: v })}
           onMaxChange={(v) => onChange({ ...value, power_max: v })}
         />
         <div>
-          <span className={labelClass}>Локация</span>
+          <span className={labelClass}>{t('search.location')}</span>
           <input
             type="text"
             className={inputClass}
@@ -205,43 +211,50 @@ export function SearchFilters({
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <CheckboxGroup
-          label="Топливо"
+          label={t('search.fuel')}
+          group="fuel_type"
           options={FUEL_TYPE_OPTIONS}
           selected={value.fuel_types}
           onChange={(v) => onChange({ ...value, fuel_types: v })}
         />
         <CheckboxGroup
-          label="КПП"
+          label={t('search.transmission')}
+          group="transmission"
           options={TRANSMISSION_OPTIONS}
           selected={value.transmissions}
           onChange={(v) => onChange({ ...value, transmissions: v })}
         />
         <CheckboxGroup
-          label="Кузов"
+          label={t('search.body')}
+          group="body_type"
           options={BODY_TYPE_OPTIONS}
           selected={value.body_types}
           onChange={(v) => onChange({ ...value, body_types: v })}
         />
         <CheckboxGroup
-          label="Материал салона"
+          label={t('search.interior')}
+          group="interior_material"
           options={INTERIOR_MATERIAL_OPTIONS}
           selected={value.interior_materials}
           onChange={(v) => onChange({ ...value, interior_materials: v })}
         />
         <CheckboxGroup
-          label="Кондиционер"
+          label={t('search.airCondition')}
+          group="air_condition"
           options={AIR_CONDITION_OPTIONS}
           selected={value.air_conditions}
           onChange={(v) => onChange({ ...value, air_conditions: v })}
         />
         <CheckboxGroup
-          label="Привод"
+          label={t('search.drive')}
+          group="drive_type"
           options={DRIVE_TYPE_OPTIONS}
           selected={value.drive_types}
           onChange={(v) => onChange({ ...value, drive_types: v })}
         />
         <CheckboxGroup
-          label="Количество мест"
+          label={t('search.seats')}
+          group="seats"
           options={SEATS_OPTIONS}
           selected={value.seats}
           onChange={(v) => onChange({ ...value, seats: v })}
@@ -259,16 +272,16 @@ export function SearchFilters({
           disabled={isSubmitting}
           className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
         >
-          Найти
+          {t('search.find')}
         </button>
         <button
           type="button"
           onClick={onReset}
           disabled={!canReset}
-          title="Очистить все фильтры и показать все объявления"
+          title={t('search.resetTitle')}
           className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          Сбросить
+          {t('search.reset')}
         </button>
       </div>
     </form>
