@@ -7,10 +7,10 @@ in tests with a hand-built ctx dict, no monkeypatching required.
 
 import asyncio
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from arq import cron, func
+from arq import Retry, cron, func
 from arq.connections import RedisSettings
 from sqlalchemy.exc import IntegrityError
 
@@ -53,6 +53,14 @@ _ARQ_HARD_TIMEOUT_SECONDS = 24 * 60 * 60
 _ASSUMED_LISTINGS_PER_PAGE = 25
 _MIN_JOB_TIMEOUT_SECONDS = 300.0
 
+# A job that loses the one-RUNNING-per-source race waits and retries instead of failing: several
+# saved searches / schedules for one source routinely come due in the same cron tick, and only the
+# first would ever run otherwise. It gives up after _MAX_QUEUE_WAIT (e.g. a multi-hour full refresh
+# holding the source); _MAX_CONCURRENCY_RETRIES just has to outlast that at _CONCURRENCY_RETRY_DELAY.
+_CONCURRENCY_RETRY_DELAY = timedelta(seconds=20)
+_MAX_QUEUE_WAIT = timedelta(hours=6)
+_MAX_CONCURRENCY_RETRIES = int(_MAX_QUEUE_WAIT / _CONCURRENCY_RETRY_DELAY) + 10
+
 
 def _estimate_job_timeout_seconds(max_pages: int, delay: float, jitter: float) -> float:
     requests_per_page = 1 + _ASSUMED_LISTINGS_PER_PAGE
@@ -82,20 +90,26 @@ async def run_scrape_job(ctx: dict[str, Any], job_id: str) -> None:
             # uq_scrape_jobs_one_running_per_source (migrations/c4d5e6f7a8b9): another job for
             # this same source is already RUNNING. Two concurrent crawls of one source can
             # deadlock each other in Postgres — UPDATEing overlapping Listing rows in whatever
-            # order each happens to encounter them — reproduced in production 2026-09-13. Losing
-            # this race is expected and fine: the schedule/saved-search cron that created this job
-            # already advanced its own next-run time regardless of whether the job succeeds (see
-            # scheduler.py), so it'll simply try again next interval once the other crawl is done.
+            # order each happens to encounter them — reproduced in production 2026-09-13. So this
+            # job can't run now, but it mustn't be lost either: saved searches due in the same
+            # cron tick all share one source, and failing the losers meant only the first one ever
+            # got refreshed. Stay PENDING and let arq retry us until the source frees up.
             await session.rollback()
             # rollback() expires every attribute on `job` — touching any of them (even just to
             # read source_id for the message below) without reloading first raises
             # MissingGreenlet, since the lazy-reload it'd trigger can't run mid-flush here.
             job = await session.get(ScrapeJob, uuid.UUID(job_id))
             assert job is not None
+            job.started_at = None
+            created_at = job.created_at if job.created_at.tzinfo else job.created_at.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) - created_at < _MAX_QUEUE_WAIT:
+                job.status = ScrapeJobStatus.PENDING
+                await session.commit()
+                raise Retry(defer=_CONCURRENCY_RETRY_DELAY)
             job.status = ScrapeJobStatus.FAILED
             job.error = {
                 "type": "ConcurrentScrapeError",
-                "message": f"Another job for source {job.source_id} is already running",
+                "message": f"Source {job.source_id} was still busy with another job after {_MAX_QUEUE_WAIT}",
             }
             job.finished_at = datetime.now(timezone.utc)
             await session.commit()
@@ -190,7 +204,7 @@ async def run_scrape_job(ctx: dict[str, Any], job_id: str) -> None:
 
 
 class WorkerSettings:
-    functions = [func(run_scrape_job, timeout=_ARQ_HARD_TIMEOUT_SECONDS), send_notification_email]
+    functions = [func(run_scrape_job, timeout=_ARQ_HARD_TIMEOUT_SECONDS, max_tries=_MAX_CONCURRENCY_RETRIES), send_notification_email]
     cron_jobs = [
         cron(run_due_scheduled_scrapes, second=0),
         cron(run_due_saved_search_scrapes, second=0),

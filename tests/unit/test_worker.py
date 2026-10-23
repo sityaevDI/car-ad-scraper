@@ -1,8 +1,9 @@
 import asyncio
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
+from arq import Retry
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
@@ -108,13 +109,14 @@ async def test_run_scrape_job_marks_completed_when_run_scrape_expunged_the_sessi
         assert job.stats["listings_seen"] == 1000
 
 
-async def test_run_scrape_job_fails_fast_when_another_job_for_the_source_is_already_running(
+async def test_run_scrape_job_retries_later_when_another_job_for_the_source_is_already_running(
     worker_session_factory, monkeypatch
 ):
     """uq_scrape_jobs_one_running_per_source (app/models/scrape_job.py) exists because two
     concurrent crawls of the same source can deadlock each other in Postgres UPDATEing
-    overlapping Listing rows — reproduced in production 2026-09-13. The losing job should fail
-    fast with a clear reason instead of ever reaching run_scrape and racing the other one.
+    overlapping Listing rows — reproduced in production 2026-09-13. The losing job must not reach
+    run_scrape, but it also must not be lost: saved searches due in the same cron tick share one
+    source, so it stays PENDING and arq retries it once the source is free.
     """
     await _seed_job(worker_session_factory, status=ScrapeJobStatus.RUNNING)
     second_job_id = await _seed_job(worker_session_factory)
@@ -128,9 +130,28 @@ async def test_run_scrape_job_fails_fast_when_another_job_for_the_source_is_alre
     monkeypatch.setattr(worker_module, "run_scrape", fake_run_scrape)
 
     ctx = {"session_factory": worker_session_factory, "proxy_provider": NullProxyProvider()}
-    await worker_module.run_scrape_job(ctx, str(second_job_id))
+    with pytest.raises(Retry):
+        await worker_module.run_scrape_job(ctx, str(second_job_id))
 
     assert run_scrape_calls == []
+    async with worker_session_factory() as session:
+        job = await session.get(ScrapeJob, second_job_id)
+        assert job.status == ScrapeJobStatus.PENDING
+        assert job.started_at is None
+        assert job.error is None
+
+
+async def test_run_scrape_job_fails_when_source_stays_busy_past_max_queue_wait(worker_session_factory):
+    await _seed_job(worker_session_factory, status=ScrapeJobStatus.RUNNING)
+    second_job_id = await _seed_job(worker_session_factory)
+    async with worker_session_factory() as session:
+        job = await session.get(ScrapeJob, second_job_id)
+        job.created_at = datetime.now(timezone.utc) - worker_module._MAX_QUEUE_WAIT - timedelta(minutes=1)
+        await session.commit()
+
+    ctx = {"session_factory": worker_session_factory, "proxy_provider": NullProxyProvider()}
+    await worker_module.run_scrape_job(ctx, str(second_job_id))
+
     async with worker_session_factory() as session:
         job = await session.get(ScrapeJob, second_job_id)
         assert job.status == ScrapeJobStatus.FAILED
