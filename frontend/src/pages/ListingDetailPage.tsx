@@ -1,44 +1,19 @@
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useCurrentUser } from '../auth/useCurrentUser'
 import { ErrorState } from '../components/StateMessage'
 import { StatusBadge } from '../components/StatusBadge'
+import { optionLabel, type OptionGroup } from '../i18n'
 import { ApiError } from '../lib/client'
 import { formatDate, formatMileage, formatPrice } from '../lib/format'
-import { listingsApi, type MarketConfidence, type MarketComparisonOut } from '../lib/listings'
+import { listingsApi, type MarketComparisonOut } from '../lib/listings'
 import { PriceScoreBadge } from '../components/PriceScoreBadge'
-import {
-  AIR_CONDITION_OPTIONS,
-  BODY_TYPE_OPTIONS,
-  DRIVE_TYPE_OPTIONS,
-  FUEL_TYPE_OPTIONS,
-  INTERIOR_MATERIAL_OPTIONS,
-  TRANSMISSION_OPTIONS,
-} from '../search/constants'
 import { parseBackTarget } from '../search/searchUrl'
 
-const TAG_LABELS = new Map<string, string>(
-  [
-    ...FUEL_TYPE_OPTIONS,
-    ...TRANSMISSION_OPTIONS,
-    ...BODY_TYPE_OPTIONS,
-    ...INTERIOR_MATERIAL_OPTIONS,
-    ...AIR_CONDITION_OPTIONS,
-    ...DRIVE_TYPE_OPTIONS,
-  ].map((o) => [o.value, o.label]),
-)
-
-function tag(value: string | null): string {
-  if (!value) return '—'
-  return TAG_LABELS.get(value) ?? value
-}
-
-const CONFIDENCE_LABELS: Record<MarketConfidence, string> = {
-  insufficient: 'недостаточно данных',
-  low: 'низкая',
-  medium: 'средняя',
-  high: 'высокая',
+function tag(group: OptionGroup, value: string | null): string {
+  return value ? optionLabel(group, value) : '—'
 }
 
 // Deviation scale spans ±30% around the market reference price; deviation_pct beyond that just
@@ -49,6 +24,7 @@ const CONFIDENCE_LABELS: Record<MarketConfidence, string> = {
 const DEVIATION_SCALE_RANGE_PCT = 30
 
 function PriceDeviationScale({ deviationPct }: { deviationPct: number }) {
+  const { t } = useTranslation()
   const clamped = Math.max(-DEVIATION_SCALE_RANGE_PCT, Math.min(DEVIATION_SCALE_RANGE_PCT, deviationPct))
   const position = ((clamped + DEVIATION_SCALE_RANGE_PCT) / (2 * DEVIATION_SCALE_RANGE_PCT)) * 100
 
@@ -68,9 +44,9 @@ function PriceDeviationScale({ deviationPct }: { deviationPct: number }) {
         />
       </div>
       <div className="mt-1 flex justify-between text-[10px] text-slate-400">
-        <span>Ниже рынка</span>
-        <span>Рынок</span>
-        <span>Выше рынка</span>
+        <span>{t('listing.belowMarket')}</span>
+        <span>{t('listing.market')}</span>
+        <span>{t('listing.aboveMarket')}</span>
       </div>
     </div>
   )
@@ -85,18 +61,19 @@ function MarketComparisonSection({
   comparison: MarketComparisonOut | undefined
   currency: string
 }) {
+  const { t } = useTranslation()
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-      <h2 className="mb-3 text-sm font-semibold text-slate-900">Рыночная оценка</h2>
+      <h2 className="mb-3 text-sm font-semibold text-slate-900">{t('listing.marketEstimate')}</h2>
       {isLoading ? (
         <div className="h-16 animate-pulse rounded-md bg-slate-100" />
       ) : !comparison?.market ? (
-        <p className="text-sm text-slate-500">Оценивается — пока недостаточно похожих объявлений.</p>
+        <p className="text-sm text-slate-500">{t('listing.estimating')}</p>
       ) : (
         <div className="space-y-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p className="text-xs text-slate-400">Оценочная рыночная цена</p>
+              <p className="text-xs text-slate-400">{t('listing.estimatedPrice')}</p>
               <p className="text-lg font-semibold text-slate-900">
                 {comparison.market.estimated_price !== null
                   ? formatPrice(comparison.market.estimated_price, currency)
@@ -115,15 +92,18 @@ function MarketComparisonSection({
             <div>
               <PriceDeviationScale deviationPct={comparison.price_score.deviation_pct} />
               <p className="mt-1.5 text-xs text-slate-500">
-                Эта цена на {Math.abs(comparison.price_score.deviation_pct).toFixed(1)}%{' '}
-                {comparison.price_score.deviation_pct >= 0 ? 'выше' : 'ниже'} расчётной рыночной
+                {t(comparison.price_score.deviation_pct >= 0 ? 'listing.deviationAbove' : 'listing.deviationBelow', {
+                  pct: Math.abs(comparison.price_score.deviation_pct).toFixed(1),
+                })}
               </p>
             </div>
           )}
 
           <p className="text-xs text-slate-400">
-            Уверенность оценки: {CONFIDENCE_LABELS[comparison.market.confidence]} ·{' '}
-            {comparison.market.comparable_listings_count} похожих объявлений
+            {t('listing.confidenceLine', {
+              confidence: t(`listing.confidence.${comparison.market.confidence}`),
+              count: comparison.market.comparable_listings_count,
+            })}
           </p>
         </div>
       )}
@@ -141,6 +121,7 @@ function Field({ label, value }: { label: string; value: string }) {
 }
 
 export function ListingDetailPage() {
+  const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const location = useLocation()
   const navigate = useNavigate()
@@ -203,10 +184,10 @@ export function ListingDetailPage() {
       <ErrorState
         message={
           query.error instanceof ApiError && query.error.status === 404
-            ? 'Объявление не найдено'
+            ? t('listing.notFound')
             : query.error instanceof ApiError
               ? query.error.message
-              : 'Не удалось загрузить объявление'
+              : t('listing.loadFailed')
         }
         onRetry={() => query.refetch()}
       />
@@ -221,7 +202,7 @@ export function ListingDetailPage() {
   return (
     <div className="space-y-6">
       <Link to={backToSearch} className="text-sm font-medium text-slate-600 hover:underline">
-        ← К поиску
+        {t('listing.backToSearch')}
       </Link>
 
       <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
@@ -230,7 +211,7 @@ export function ListingDetailPage() {
             {listing.image_url ? (
               <img src={listing.image_url} alt={listing.title} className="h-full w-full object-cover" />
             ) : (
-              <div className="flex h-full w-full items-center justify-center text-sm text-slate-400">Нет фото</div>
+              <div className="flex h-full w-full items-center justify-center text-sm text-slate-400">{t('common.noPhoto')}</div>
             )}
           </div>
 
@@ -250,7 +231,7 @@ export function ListingDetailPage() {
                         : 'rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700 disabled:opacity-50'
                     }
                   >
-                    {listing.is_following ? 'Отслеживается ✓' : 'Отслеживать цену'}
+                    {listing.is_following ? t('listing.following') : t('listing.follow')}
                   </button>
                 )}
               </div>
@@ -258,22 +239,22 @@ export function ListingDetailPage() {
             <p className="mt-1 text-2xl font-bold text-slate-900">{formatPrice(listing.price, listing.currency)}</p>
 
             <dl className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3">
-              <Field label="Марка" value={listing.make} />
-              <Field label="Модель" value={listing.model} />
-              <Field label="Год" value={String(listing.production_year)} />
-              <Field label="Пробег" value={formatMileage(listing.mileage_km)} />
-              <Field label="Топливо" value={tag(listing.fuel_type)} />
-              <Field label="КПП" value={tag(listing.transmission)} />
-              <Field label="Кузов" value={tag(listing.body_type)} />
-              <Field label="Материал салона" value={tag(listing.interior_material)} />
-              <Field label="Кондиционер" value={tag(listing.air_condition)} />
-              <Field label="Привод" value={tag(listing.drive_type)} />
-              <Field label="Объём двигателя" value={listing.engine_volume_cc ? `${listing.engine_volume_cc} см³` : '—'} />
-              <Field label="Мощность" value={listing.power_hp ? `${listing.power_hp} л.с.` : '—'} />
-              <Field label="Количество мест" value={listing.seats ?? '—'} />
-              <Field label="Локация" value={listing.location ?? '—'} />
-              <Field label="Впервые замечено" value={formatDate(listing.first_seen_at)} />
-              <Field label="Последнее обновление" value={formatDate(listing.last_checked_at)} />
+              <Field label={t('listing.make')} value={listing.make} />
+              <Field label={t('listing.model')} value={listing.model} />
+              <Field label={t('listing.year')} value={String(listing.production_year)} />
+              <Field label={t('listing.mileage')} value={formatMileage(listing.mileage_km)} />
+              <Field label={t('listing.fuel')} value={tag('fuel_type', listing.fuel_type)} />
+              <Field label={t('listing.transmission')} value={tag('transmission', listing.transmission)} />
+              <Field label={t('listing.body')} value={tag('body_type', listing.body_type)} />
+              <Field label={t('listing.interior')} value={tag('interior_material', listing.interior_material)} />
+              <Field label={t('listing.airCondition')} value={tag('air_condition', listing.air_condition)} />
+              <Field label={t('listing.drive')} value={tag('drive_type', listing.drive_type)} />
+              <Field label={t('listing.engineVolume')} value={listing.engine_volume_cc ? t('listing.ccUnit', { value: listing.engine_volume_cc }) : '—'} />
+              <Field label={t('listing.power')} value={listing.power_hp ? t('listing.hpUnit', { value: listing.power_hp }) : '—'} />
+              <Field label={t('listing.seats')} value={listing.seats ?? '—'} />
+              <Field label={t('listing.location')} value={listing.location ?? '—'} />
+              <Field label={t('listing.firstSeen')} value={formatDate(listing.first_seen_at)} />
+              <Field label={t('listing.lastUpdated')} value={formatDate(listing.last_checked_at)} />
             </dl>
 
             <a
@@ -282,7 +263,7 @@ export function ListingDetailPage() {
               rel="noopener noreferrer"
               className="mt-4 inline-block text-sm font-medium text-slate-700 hover:underline"
             >
-              Открыть на источнике ↗
+              {t('listing.openSource')}
             </a>
           </div>
         </div>
@@ -295,18 +276,18 @@ export function ListingDetailPage() {
       />
 
       <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="mb-3 text-sm font-semibold text-slate-900">История изменений</h2>
+        <h2 className="mb-3 text-sm font-semibold text-slate-900">{t('listing.history')}</h2>
         {sortedSnapshots.length === 0 ? (
-          <p className="text-sm text-slate-500">Изменений пока не зафиксировано.</p>
+          <p className="text-sm text-slate-500">{t('listing.noHistory')}</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-xs text-slate-400">
-                  <th className="py-1.5 pr-4 font-medium">Дата</th>
-                  <th className="py-1.5 pr-4 font-medium">Цена</th>
-                  <th className="py-1.5 pr-4 font-medium">Пробег</th>
-                  <th className="py-1.5 font-medium">Заголовок</th>
+                  <th className="py-1.5 pr-4 font-medium">{t('listing.date')}</th>
+                  <th className="py-1.5 pr-4 font-medium">{t('listing.price')}</th>
+                  <th className="py-1.5 pr-4 font-medium">{t('listing.mileage')}</th>
+                  <th className="py-1.5 font-medium">{t('listing.title')}</th>
                 </tr>
               </thead>
               <tbody>

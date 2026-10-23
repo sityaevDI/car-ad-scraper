@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+import { intlLocale } from '../i18n'
 import type { RemovalSeriesPoint } from '../lib/market'
 
 const WIDTH = 720
@@ -5,10 +7,11 @@ const HEIGHT = 180
 const PAD = { top: 12, right: 8, bottom: 24, left: 32 }
 
 function shortDate(iso: string): string {
-  return new Date(`${iso}T00:00:00Z`).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', timeZone: 'UTC' })
+  return new Date(`${iso}T00:00:00Z`).toLocaleDateString(intlLocale(), { day: 'numeric', month: 'short', timeZone: 'UTC' })
 }
 
 export function DailyBarChart({ series }: { series: RemovalSeriesPoint[] }) {
+  const { t } = useTranslation()
   const max = Math.max(1, ...series.map((p) => p.removed_count))
   const plotWidth = WIDTH - PAD.left - PAD.right
   const plotHeight = HEIGHT - PAD.top - PAD.bottom
@@ -16,7 +19,7 @@ export function DailyBarChart({ series }: { series: RemovalSeriesPoint[] }) {
   const barWidth = Math.max(2, slot - 3)
 
   return (
-    <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" aria-label="Снятые объявления по дням" className="w-full">
+    <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" aria-label={t('chart.removedByDay')} className="w-full">
       {[0, 0.5, 1].map((fraction) => {
         const y = PAD.top + plotHeight * (1 - fraction)
         return (

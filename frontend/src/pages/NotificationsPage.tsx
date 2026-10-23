@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { EmptyState, ErrorState, LoadingState } from '../components/StateMessage'
 import { ApiError } from '../lib/client'
@@ -27,6 +28,7 @@ function notificationLinkTo(notification: NotificationOut): string | null {
 }
 
 export function NotificationsPage() {
+  const { t } = useTranslation()
   const query = useQuery({ queryKey: ['notifications'], queryFn: notificationsApi.list })
   // Tracks the notification currently being read/deleted so its buttons can be disabled — without
   // this, a slow request let a user fire the same delete several times before the list refetched.
@@ -40,7 +42,7 @@ export function NotificationsPage() {
       await notificationsApi.markRead(id)
       await query.refetch()
     } catch (err) {
-      setActionError(err instanceof ApiError ? err.message : 'Не удалось отметить уведомление прочитанным')
+      setActionError(err instanceof ApiError ? err.message : t('notifications.markReadFailed'))
     } finally {
       setPendingId(null)
     }
@@ -53,7 +55,7 @@ export function NotificationsPage() {
       await notificationsApi.remove(id)
       await query.refetch()
     } catch (err) {
-      setActionError(err instanceof ApiError ? err.message : 'Не удалось удалить уведомление')
+      setActionError(err instanceof ApiError ? err.message : t('notifications.deleteFailed'))
     } finally {
       setPendingId(null)
     }
@@ -61,13 +63,13 @@ export function NotificationsPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-semibold text-slate-900">Уведомления</h1>
+      <h1 className="text-xl font-semibold text-slate-900">{t('notifications.title')}</h1>
 
       {actionError && <p className="text-sm text-red-600">{actionError}</p>}
 
       {query.isLoading && <LoadingState />}
-      {query.isError && <ErrorState message="Не удалось загрузить уведомления" onRetry={() => query.refetch()} />}
-      {query.isSuccess && query.data.notifications.length === 0 && <EmptyState message="Уведомлений пока нет" />}
+      {query.isError && <ErrorState message={t('notifications.loadFailed')} onRetry={() => query.refetch()} />}
+      {query.isSuccess && query.data.notifications.length === 0 && <EmptyState message={t('notifications.empty')} />}
 
       {query.isSuccess &&
         query.data.notifications.length > 0 &&
@@ -105,15 +107,15 @@ export function NotificationsPage() {
                             onClick={() => handleRead(notification.id)}
                             className="rounded-full bg-slate-900 px-2 py-0.5 text-xs font-medium text-white hover:bg-slate-700 disabled:opacity-50"
                           >
-                            Прочитано
+                            {t('notifications.markRead')}
                           </button>
                         )}
                         <button
                           type="button"
                           disabled={isPending}
                           onClick={() => handleDelete(notification.id)}
-                          aria-label="Удалить уведомление"
-                          title="Удалить"
+                          aria-label={t('notifications.deleteLabel')}
+                          title={t('notifications.delete')}
                           className="rounded-full border border-slate-200 px-2 py-0.5 text-xs font-medium text-slate-500 hover:border-red-300 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
                         >
                           ✕
@@ -133,7 +135,7 @@ export function NotificationsPage() {
                         ))}
                         {newListingsTotal > newListings.length && (
                           <li className="list-disc text-xs text-slate-400">
-                            и ещё {newListingsTotal - newListings.length}
+                            {t('notifications.andMore', { count: newListingsTotal - newListings.length })}
                           </li>
                         )}
                       </ul>

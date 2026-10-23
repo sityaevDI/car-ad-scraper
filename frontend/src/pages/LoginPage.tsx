@@ -1,10 +1,12 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link, useNavigate } from 'react-router-dom'
 import { AuthCard, ErrorText, FieldLabel, inputClass, primaryButtonClass } from '../components/AuthCard'
 import { useInvalidateCurrentUser } from '../auth/useCurrentUser'
 import { ApiError, authApi } from '../lib/api'
 
 export function LoginPage() {
+  const { t } = useTranslation()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -21,18 +23,18 @@ export function LoginPage() {
       await invalidateCurrentUser()
       navigate('/')
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Не удалось войти')
+      setError(err instanceof ApiError ? err.message : t('auth.loginFailed'))
     } finally {
       setIsSubmitting(false)
     }
   }
 
   return (
-    <AuthCard title="Вход">
+    <AuthCard title={t('auth.loginTitle')}>
       {error && <ErrorText>{error}</ErrorText>}
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <FieldLabel htmlFor="email">Email</FieldLabel>
+          <FieldLabel htmlFor="email">{t('auth.email')}</FieldLabel>
           <input
             id="email"
             type="email"
@@ -44,7 +46,7 @@ export function LoginPage() {
           />
         </div>
         <div>
-          <FieldLabel htmlFor="password">Пароль</FieldLabel>
+          <FieldLabel htmlFor="password">{t('auth.password')}</FieldLabel>
           <input
             id="password"
             type="password"
@@ -57,17 +59,17 @@ export function LoginPage() {
         </div>
         <div className="text-right">
           <Link to="/forgot-password" className="text-sm text-slate-600 hover:underline">
-            Забыли пароль?
+            {t('auth.forgotPassword')}
           </Link>
         </div>
         <button type="submit" disabled={isSubmitting} className={primaryButtonClass}>
-          {isSubmitting ? 'Входим…' : 'Войти'}
+          {isSubmitting ? t('auth.loggingIn') : t('nav.login')}
         </button>
       </form>
       <p className="mt-4 text-center text-sm text-slate-600">
-        Нет аккаунта?{' '}
+        {t('auth.noAccount')}{' '}
         <Link to="/register" className="font-medium text-slate-900 hover:underline">
-          Зарегистрироваться
+          {t('auth.signUp')}
         </Link>
       </p>
     </AuthCard>

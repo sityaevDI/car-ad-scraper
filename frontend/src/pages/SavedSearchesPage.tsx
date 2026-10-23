@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { ApiError } from '../lib/client'
 import { formatDate } from '../lib/format'
@@ -9,6 +10,7 @@ import { searchPathForSaved, viewFromSaved } from '../search/searchUrl'
 import { EmptyState, ErrorState, LoadingState } from '../components/StateMessage'
 
 export function SavedSearchesPage() {
+  const { t } = useTranslation()
   const [pendingId, setPendingId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
@@ -21,7 +23,7 @@ export function SavedSearchesPage() {
       await savedSearchesApi.update(id, { enabled: !enabled })
       await query.refetch()
     } catch (err) {
-      setActionError(err instanceof ApiError ? err.message : 'Не удалось изменить сохранённый поиск')
+      setActionError(err instanceof ApiError ? err.message : t('savedSearches.updateFailed'))
     } finally {
       setPendingId(null)
     }
@@ -34,7 +36,7 @@ export function SavedSearchesPage() {
       await savedSearchesApi.remove(id)
       await query.refetch()
     } catch (err) {
-      setActionError(err instanceof ApiError ? err.message : 'Не удалось удалить сохранённый поиск')
+      setActionError(err instanceof ApiError ? err.message : t('savedSearches.deleteFailed'))
     } finally {
       setPendingId(null)
     }
@@ -43,19 +45,18 @@ export function SavedSearchesPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold text-slate-900">Сохранённые поиски</h1>
+        <h1 className="text-xl font-semibold text-slate-900">{t('savedSearches.title')}</h1>
         <p className="mt-1 text-sm text-slate-600">
-          Каждый активный поиск автоматически обновляется, а о новых и подешевевших объявлениях приходит
-          уведомление.
+          {t('savedSearches.intro')}
         </p>
       </div>
 
       {actionError && <p className="text-sm text-red-600">{actionError}</p>}
 
       {query.isLoading && <LoadingState />}
-      {query.isError && <ErrorState message="Не удалось загрузить сохранённые поиски" onRetry={() => query.refetch()} />}
+      {query.isError && <ErrorState message={t('savedSearches.loadFailed')} onRetry={() => query.refetch()} />}
       {query.isSuccess && query.data.length === 0 && (
-        <EmptyState message="Пока нет сохранённых поисков — сохраните текущие фильтры на странице поиска." />
+        <EmptyState message={t('savedSearches.empty')} />
       )}
 
       {query.isSuccess && query.data.length > 0 && (
@@ -63,10 +64,10 @@ export function SavedSearchesPage() {
           <table className="w-full text-left text-sm">
             <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500">
               <tr>
-                <th className="px-4 py-2">Название</th>
-                <th className="px-4 py-2">Фильтры</th>
-                <th className="px-4 py-2">Статус</th>
-                <th className="px-4 py-2">Последний запуск</th>
+                <th className="px-4 py-2">{t('savedSearches.name')}</th>
+                <th className="px-4 py-2">{t('savedSearches.filters')}</th>
+                <th className="px-4 py-2">{t('savedSearches.status')}</th>
+                <th className="px-4 py-2">{t('savedSearches.lastRun')}</th>
                 <th className="px-4 py-2" />
               </tr>
             </thead>
@@ -78,20 +79,20 @@ export function SavedSearchesPage() {
                     {describeQuery(saved.query)}
                     {saved.view_settings && (
                       <div className="text-xs text-slate-400">
-                        Группировка: {describeGrouping(viewFromSaved(saved.view_settings).groupBy)}
+                        {t('savedSearches.grouping', { value: describeGrouping(viewFromSaved(saved.view_settings).groupBy) })}
                       </div>
                     )}
                   </td>
-                  <td className="px-4 py-2 text-slate-700">{saved.enabled ? 'активен' : 'приостановлен'}</td>
+                  <td className="px-4 py-2 text-slate-700">{saved.enabled ? t('savedSearches.active') : t('savedSearches.paused')}</td>
                   <td className="px-4 py-2 text-slate-500">
-                    {saved.last_run_at ? formatDate(saved.last_run_at) : 'ещё не запускался'}
+                    {saved.last_run_at ? formatDate(saved.last_run_at) : t('savedSearches.neverRun')}
                   </td>
                   <td className="px-4 py-2 text-right">
                     <Link
                       to={searchPathForSaved(saved)}
                       className="text-xs font-medium text-slate-700 hover:underline"
                     >
-                      Открыть в поиске
+                      {t('savedSearches.open')}
                     </Link>
                     <button
                       type="button"
@@ -99,7 +100,7 @@ export function SavedSearchesPage() {
                       onClick={() => handleToggle(saved.id, saved.enabled)}
                       className="ml-3 rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
                     >
-                      {saved.enabled ? 'Приостановить' : 'Возобновить'}
+                      {saved.enabled ? t('savedSearches.pause') : t('savedSearches.resume')}
                     </button>
                     <button
                       type="button"
@@ -107,7 +108,7 @@ export function SavedSearchesPage() {
                       onClick={() => handleDelete(saved.id)}
                       className="ml-2 rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
                     >
-                      Удалить
+                      {t('savedSearches.delete')}
                     </button>
                   </td>
                 </tr>

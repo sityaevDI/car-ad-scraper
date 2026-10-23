@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { Navigate, useParams } from 'react-router-dom'
 import { ErrorState } from '../components/StateMessage'
 import { ApiError } from '../lib/client'
@@ -7,8 +8,9 @@ import { searchPathForSaved } from '../search/searchUrl'
 
 // Landing point for the "N new listings" email link (app/notifications/delivery.py) — loads the
 // saved search then hands its filters and saved layout off to SearchPage as URL params, same as
-// the "Открыть в поиске" link on SavedSearchesPage.
+// the "Open in search" link on SavedSearchesPage.
 export function OpenSavedSearchPage() {
+  const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
 
   const query = useQuery({
@@ -26,8 +28,8 @@ export function OpenSavedSearchPage() {
       <ErrorState
         message={
           query.error instanceof ApiError && query.error.status === 404
-            ? 'Сохранённый поиск не найден'
-            : 'Не удалось открыть сохранённый поиск'
+            ? t('savedSearches.notFound')
+            : t('savedSearches.openFailed')
         }
         onRetry={() => query.refetch()}
       />

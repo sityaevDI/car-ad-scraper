@@ -1,9 +1,11 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link, useSearchParams } from 'react-router-dom'
 import { AuthCard, ErrorText, FieldLabel, inputClass, primaryButtonClass, SuccessText } from '../components/AuthCard'
 import { ApiError, authApi } from '../lib/api'
 
 export function ResetPasswordPage() {
+  const { t } = useTranslation()
   const [searchParams] = useSearchParams()
   const token = searchParams.get('token')
 
@@ -18,11 +20,11 @@ export function ResetPasswordPage() {
     setError(null)
 
     if (password !== confirmPassword) {
-      setError('Пароли не совпадают')
+      setError(t('auth.passwordsMismatch'))
       return
     }
     if (!token) {
-      setError('Ссылка недействительна: отсутствует токен')
+      setError(t('auth2.tokenMissing'))
       return
     }
 
@@ -31,27 +33,27 @@ export function ResetPasswordPage() {
       await authApi.resetPassword(token, password)
       setIsDone(true)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Не удалось сбросить пароль')
+      setError(err instanceof ApiError ? err.message : t('auth2.resetFailed'))
     } finally {
       setIsSubmitting(false)
     }
   }
 
   return (
-    <AuthCard title="Новый пароль">
-      {!token && <ErrorText>Ссылка недействительна: отсутствует токен.</ErrorText>}
+    <AuthCard title={t('auth2.newPasswordTitle')}>
+      {!token && <ErrorText>{t('auth2.tokenMissingDot')}</ErrorText>}
       {error && <ErrorText>{error}</ErrorText>}
       {isDone ? (
         <>
-          <SuccessText>Пароль обновлён. Теперь можно войти с новым паролем.</SuccessText>
+          <SuccessText>{t('auth2.passwordUpdated')}</SuccessText>
           <Link to="/login" className="block text-center text-sm font-medium text-slate-900 hover:underline">
-            Ко входу
+            {t('auth2.toLogin')}
           </Link>
         </>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <FieldLabel htmlFor="password">Новый пароль</FieldLabel>
+            <FieldLabel htmlFor="password">{t('auth2.newPassword')}</FieldLabel>
             <input
               id="password"
               type="password"
@@ -64,7 +66,7 @@ export function ResetPasswordPage() {
             />
           </div>
           <div>
-            <FieldLabel htmlFor="confirmPassword">Повторите пароль</FieldLabel>
+            <FieldLabel htmlFor="confirmPassword">{t('auth.confirmPassword')}</FieldLabel>
             <input
               id="confirmPassword"
               type="password"
@@ -77,7 +79,7 @@ export function ResetPasswordPage() {
             />
           </div>
           <button type="submit" disabled={isSubmitting || !token} className={primaryButtonClass}>
-            {isSubmitting ? 'Сохраняем…' : 'Сохранить пароль'}
+            {isSubmitting ? t('auth2.savingPassword') : t('auth2.savePassword')}
           </button>
         </form>
       )}

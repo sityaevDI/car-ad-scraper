@@ -1,48 +1,31 @@
 import { Link } from 'react-router-dom'
 import { formatMileage, formatPrice } from '../lib/format'
 import type { ListingOut } from '../lib/listings'
+import { useTranslation } from 'react-i18next'
+import { optionLabel, type OptionGroup } from '../i18n'
 import { PriceScoreBadge } from './PriceScoreBadge'
 import { StatusBadge } from './StatusBadge'
-import {
-  AIR_CONDITION_OPTIONS,
-  BODY_TYPE_OPTIONS,
-  DRIVE_TYPE_OPTIONS,
-  FUEL_TYPE_OPTIONS,
-  INTERIOR_MATERIAL_OPTIONS,
-  TRANSMISSION_OPTIONS,
-} from '../search/constants'
 
-const TAG_LABELS = new Map<string, string>(
-  [
-    ...FUEL_TYPE_OPTIONS,
-    ...TRANSMISSION_OPTIONS,
-    ...BODY_TYPE_OPTIONS,
-    ...INTERIOR_MATERIAL_OPTIONS,
-    ...AIR_CONDITION_OPTIONS,
-    ...DRIVE_TYPE_OPTIONS,
-  ].map((o) => [o.value, o.label]),
-)
-
-function tag(value: string | null): string | null {
-  if (!value) return null
-  return TAG_LABELS.get(value) ?? value
+function tag(group: OptionGroup, value: string | null): string | null {
+  return value ? optionLabel(group, value) : null
 }
 
 // `from` is the search-page URL to return to. It rides in the link's own URL rather than in router
-// state or storage, so "← К поиску" still lands on the right search when the card is opened in a
+// state or storage, so "← back to search" still lands on the right search when the card is opened in a
 // new tab (ctrl/middle click), where neither this tab's state nor its sessionStorage exists.
 export function ListingCard({ listing, from }: { listing: ListingOut; from?: string }) {
+  const { t } = useTranslation()
   const listingPath = from
     ? `/listings/${listing.id}?${new URLSearchParams({ from })}`
     : `/listings/${listing.id}`
   const tags = [
-    tag(listing.fuel_type),
-    tag(listing.transmission),
-    tag(listing.body_type),
-    tag(listing.interior_material),
-    tag(listing.air_condition),
-    tag(listing.drive_type),
-  ].filter((t): t is string => Boolean(t))
+    tag('fuel_type', listing.fuel_type),
+    tag('transmission', listing.transmission),
+    tag('body_type', listing.body_type),
+    tag('interior_material', listing.interior_material),
+    tag('air_condition', listing.air_condition),
+    tag('drive_type', listing.drive_type),
+  ].filter((label): label is string => Boolean(label))
 
   return (
     <div className="relative flex gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300 hover:shadow-md">
@@ -50,7 +33,7 @@ export function ListingCard({ listing, from }: { listing: ListingOut; from?: str
         {listing.image_url ? (
           <img src={listing.image_url} alt={listing.title} className="h-full w-full object-cover" />
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">Нет фото</div>
+          <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">{t('common.noPhoto')}</div>
         )}
       </div>
       <div className="flex min-w-0 flex-1 flex-col">
@@ -63,9 +46,9 @@ export function ListingCard({ listing, from }: { listing: ListingOut; from?: str
         </p>
         {tags.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1">
-            {tags.map((t) => (
-              <span key={t} className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
-                {t}
+            {tags.map((label) => (
+              <span key={label} className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+                {label}
               </span>
             ))}
           </div>
@@ -76,7 +59,7 @@ export function ListingCard({ listing, from }: { listing: ListingOut; from?: str
             {listing.price_score && <PriceScoreBadge priceScore={listing.price_score} variant="short" />}
           </div>
           <div className="flex shrink-0 gap-3 text-xs">
-            <span className="font-medium text-slate-700">Подробнее</span>
+            <span className="font-medium text-slate-700">{t('common.details')}</span>
             {/* Positioned + z-10 so this link stays above the card-wide stretched link below and
                 keeps its own click behavior (new tab) instead of triggering the internal one. */}
             <a
@@ -85,13 +68,13 @@ export function ListingCard({ listing, from }: { listing: ListingOut; from?: str
               rel="noopener noreferrer"
               className="relative z-10 font-medium text-slate-700 hover:underline"
             >
-              Источник ↗
+              {t('common.source')} ↗
             </a>
           </div>
         </div>
       </div>
-      {/* Stretched link: makes the whole card (image, title, "Подробнее" text, etc.) clickable. */}
-      <Link to={listingPath} className="absolute inset-0 rounded-lg" aria-label={`Подробнее: ${listing.title}`} />
+      {/* Stretched link: makes the whole card (image, title, "Details" text, etc.) clickable. */}
+      <Link to={listingPath} className="absolute inset-0 rounded-lg" aria-label={t('common.detailsFor', { title: listing.title })} />
     </div>
   )
 }

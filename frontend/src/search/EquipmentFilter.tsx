@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { equipmentLabel } from '../i18n'
 import { EQUIPMENT_CATEGORIES, EQUIPMENT_POPULAR } from './constants'
 
 const labelClass = 'mb-1 block text-xs font-medium text-slate-600'
@@ -27,6 +29,7 @@ export function EquipmentFilter({
   selected: string[] | undefined
   onChange: (next: string[] | undefined) => void
 }) {
+  const { t, i18n } = useTranslation()
   const [expanded, setExpanded] = useState(false)
   const [search, setSearch] = useState('')
   const current = selected ?? []
@@ -41,38 +44,36 @@ export function EquipmentFilter({
     if (!q) return EQUIPMENT_CATEGORIES
     return EQUIPMENT_CATEGORIES.map((group) => ({
       ...group,
-      options: group.options.filter((o) => o.label.toLowerCase().includes(q)),
+      options: group.options.filter((o) => equipmentLabel(o.value).toLowerCase().includes(q)),
     })).filter((group) => group.options.length > 0)
-  }, [search])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the label text depends on the language
+  }, [search, i18n.language])
 
   // Selected features outside the popular set stay visible as their own chips even when
   // collapsed, so opening a saved search with an unusual feature doesn't look like it lost it.
   const extraSelected = current.filter((v) => !EQUIPMENT_POPULAR.some((p) => p.value === v))
-  const extraSelectedLabels = extraSelected.map(
-    (value) => EQUIPMENT_CATEGORIES.flatMap((g) => g.options).find((o) => o.value === value)?.label ?? value
-  )
 
   return (
     <div>
-      <span className={labelClass}>Оснащение</span>
+      <span className={labelClass}>{t('search.equipment')}</span>
       <div className="flex flex-wrap gap-1.5">
         {EQUIPMENT_POPULAR.map((option) => (
           <Chip
             key={option.value}
-            label={option.label}
+            label={equipmentLabel(option.value)}
             active={current.includes(option.value)}
             onClick={() => toggle(option.value)}
           />
         ))}
-        {extraSelected.map((value, i) => (
-          <Chip key={value} label={extraSelectedLabels[i]} active onClick={() => toggle(value)} />
+        {extraSelected.map((value) => (
+          <Chip key={value} label={equipmentLabel(value)} active onClick={() => toggle(value)} />
         ))}
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
           className="rounded-full border border-dashed border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-500 hover:border-slate-400"
         >
-          {expanded ? 'Свернуть' : 'Ещё опции…'}
+          {expanded ? t('search.collapse') : t('search.moreOptions')}
         </button>
       </div>
 
@@ -80,7 +81,7 @@ export function EquipmentFilter({
         <div className="mt-3 rounded-md border border-slate-200 p-3">
           <input
             type="text"
-            placeholder="Поиск по опциям…"
+            placeholder={t('search.searchOptions')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="mb-3 w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
@@ -88,7 +89,7 @@ export function EquipmentFilter({
           <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
             {filteredCategories.map((group) => (
               <div key={group.category}>
-                <div className="mb-1 text-xs font-semibold text-slate-500">{group.category}</div>
+                <div className="mb-1 text-xs font-semibold text-slate-500">{t(`equipmentCategory.${group.category}`)}</div>
                 <div className="flex flex-wrap gap-x-3 gap-y-1">
                   {group.options.map((option) => (
                     <label key={option.value} className="flex items-center gap-1 text-sm text-slate-700">
@@ -98,13 +99,13 @@ export function EquipmentFilter({
                         onChange={() => toggle(option.value)}
                         className="rounded border-slate-300"
                       />
-                      {option.label}
+                      {equipmentLabel(option.value)}
                     </label>
                   ))}
                 </div>
               </div>
             ))}
-            {filteredCategories.length === 0 && <div className="text-sm text-slate-400">Ничего не найдено</div>}
+            {filteredCategories.length === 0 && <div className="text-sm text-slate-400">{t('search.nothingFound')}</div>}
           </div>
         </div>
       )}

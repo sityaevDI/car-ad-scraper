@@ -1,10 +1,12 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link, useNavigate } from 'react-router-dom'
 import { AuthCard, ErrorText, FieldLabel, inputClass, primaryButtonClass } from '../components/AuthCard'
 import { useInvalidateCurrentUser } from '../auth/useCurrentUser'
 import { ApiError, authApi } from '../lib/api'
 
 export function RegisterPage() {
+  const { t } = useTranslation()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -18,7 +20,7 @@ export function RegisterPage() {
     setError(null)
 
     if (password !== confirmPassword) {
-      setError('Пароли не совпадают')
+      setError(t('auth.passwordsMismatch'))
       return
     }
 
@@ -28,18 +30,18 @@ export function RegisterPage() {
       await invalidateCurrentUser()
       navigate('/', { state: { justRegistered: true } })
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Не удалось зарегистрироваться')
+      setError(err instanceof ApiError ? err.message : t('auth.registerFailed'))
     } finally {
       setIsSubmitting(false)
     }
   }
 
   return (
-    <AuthCard title="Регистрация">
+    <AuthCard title={t('auth.registerTitle')}>
       {error && <ErrorText>{error}</ErrorText>}
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <FieldLabel htmlFor="email">Email</FieldLabel>
+          <FieldLabel htmlFor="email">{t('auth.email')}</FieldLabel>
           <input
             id="email"
             type="email"
@@ -51,7 +53,7 @@ export function RegisterPage() {
           />
         </div>
         <div>
-          <FieldLabel htmlFor="password">Пароль</FieldLabel>
+          <FieldLabel htmlFor="password">{t('auth.password')}</FieldLabel>
           <input
             id="password"
             type="password"
@@ -64,7 +66,7 @@ export function RegisterPage() {
           />
         </div>
         <div>
-          <FieldLabel htmlFor="confirmPassword">Повторите пароль</FieldLabel>
+          <FieldLabel htmlFor="confirmPassword">{t('auth.confirmPassword')}</FieldLabel>
           <input
             id="confirmPassword"
             type="password"
@@ -77,13 +79,13 @@ export function RegisterPage() {
           />
         </div>
         <button type="submit" disabled={isSubmitting} className={primaryButtonClass}>
-          {isSubmitting ? 'Создаём аккаунт…' : 'Зарегистрироваться'}
+          {isSubmitting ? t('auth.creatingAccount') : t('auth.signUp')}
         </button>
       </form>
       <p className="mt-4 text-center text-sm text-slate-600">
-        Уже есть аккаунт?{' '}
+        {t('auth.haveAccount')}{' '}
         <Link to="/login" className="font-medium text-slate-900 hover:underline">
-          Войти
+          {t('nav.login')}
         </Link>
       </p>
     </AuthCard>

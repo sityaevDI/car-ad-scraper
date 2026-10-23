@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link, useSearchParams } from 'react-router-dom'
 import { AuthCard, ErrorText, SuccessText } from '../components/AuthCard'
 import { useInvalidateCurrentUser } from '../auth/useCurrentUser'
@@ -7,10 +8,11 @@ import { ApiError, authApi } from '../lib/api'
 type Status = 'pending' | 'success' | 'error'
 
 export function VerifyEmailPage() {
+  const { t } = useTranslation()
   const [searchParams] = useSearchParams()
   const token = searchParams.get('token')
   const [status, setStatus] = useState<Status>(token ? 'pending' : 'error')
-  const [error, setError] = useState<string | null>(token ? null : 'Ссылка недействительна: отсутствует токен')
+  const [error, setError] = useState<string | null>(token ? null : t('auth2.tokenMissing'))
   const invalidateCurrentUser = useInvalidateCurrentUser()
   const hasRun = useRef(false)
 
@@ -26,17 +28,17 @@ export function VerifyEmailPage() {
       })
       .catch((err) => {
         setStatus('error')
-        setError(err instanceof ApiError ? err.message : 'Не удалось подтвердить email')
+        setError(err instanceof ApiError ? err.message : t('auth2.verifyFailed'))
       })
-  }, [token, invalidateCurrentUser])
+  }, [token, invalidateCurrentUser, t])
 
   return (
-    <AuthCard title="Подтверждение email">
-      {status === 'pending' && <p className="text-sm text-slate-600">Подтверждаем адрес…</p>}
-      {status === 'success' && <SuccessText>Email подтверждён.</SuccessText>}
+    <AuthCard title={t('auth2.verifyTitle')}>
+      {status === 'pending' && <p className="text-sm text-slate-600">{t('auth2.verifying')}</p>}
+      {status === 'success' && <SuccessText>{t('auth2.verified')}</SuccessText>}
       {status === 'error' && error && <ErrorText>{error}</ErrorText>}
       <Link to="/" className="mt-4 block text-center text-sm font-medium text-slate-900 hover:underline">
-        На главную
+        {t('auth2.toHome')}
       </Link>
     </AuthCard>
   )

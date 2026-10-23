@@ -1,9 +1,10 @@
+import { useTranslation } from 'react-i18next'
 import type { GroupField } from '../lib/search'
-import { FLAT_SORT_OPTIONS, GROUP_FIELD_LABELS, GROUP_SORT_OPTIONS } from '../lib/search'
+import { FLAT_SORT_OPTIONS, GROUP_FIELDS, GROUP_SORT_OPTIONS, groupFieldLabel, sortLabel } from '../lib/search'
 
 // Interior material is filterable (see SearchFilters) but not offered as a grouping axis — it
 // splits listings into too many thin, low-value groups to be useful there.
-const ALL_GROUP_FIELDS = (Object.keys(GROUP_FIELD_LABELS) as GroupField[]).filter(
+const ALL_GROUP_FIELDS = GROUP_FIELDS.filter(
   (field) => field !== 'interior_material',
 )
 
@@ -26,6 +27,7 @@ export function ViewControls({
   onReset: () => void
   canReset: boolean
 }) {
+  const { t } = useTranslation()
   const isGrouped = groupBy.length > 0
   const sortOptions = isGrouped ? GROUP_SORT_OPTIONS : FLAT_SORT_OPTIONS
 
@@ -36,7 +38,7 @@ export function ViewControls({
   return (
     <div className="mb-4 flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <span className="text-xs font-medium text-slate-600">Группировать по:</span>
+        <span className="text-xs font-medium text-slate-600">{t('search.groupBy')}</span>
         {ALL_GROUP_FIELDS.map((field) => (
           <label key={field} className="flex items-center gap-1 text-sm text-slate-700">
             <input
@@ -45,7 +47,7 @@ export function ViewControls({
               onChange={() => toggleField(field)}
               className="rounded border-slate-300"
             />
-            {GROUP_FIELD_LABELS[field]}
+            {groupFieldLabel(field)}
           </label>
         ))}
       </div>
@@ -53,7 +55,7 @@ export function ViewControls({
       <div className="flex flex-wrap items-center gap-3">
         {isGrouped && (
           <label className="flex items-center gap-1.5 text-sm text-slate-700">
-            Мин. кол-во в группе
+            {t('search.minGroupCount')}
             <input
               type="number"
               min={0}
@@ -64,7 +66,7 @@ export function ViewControls({
           </label>
         )}
         <label className="flex items-center gap-1.5 text-sm text-slate-700">
-          Сортировка
+          {t('search.sortLabel')}
           <select
             className="rounded-md border border-slate-300 px-2 py-1 text-sm"
             value={sort}
@@ -72,7 +74,7 @@ export function ViewControls({
           >
             {sortOptions.map((option) => (
               <option key={option.value} value={option.value}>
-                {option.label}
+                {sortLabel(option.value)}
               </option>
             ))}
           </select>
@@ -81,10 +83,10 @@ export function ViewControls({
           type="button"
           onClick={onReset}
           disabled={!canReset}
-          title="Вернуть группировку, мин. кол-во в группе и сортировку к значениям по умолчанию"
+          title={t('search.resetGroupingTitle')}
           className="rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          Сбросить группировку
+          {t('search.resetGrouping')}
         </button>
       </div>
     </div>
